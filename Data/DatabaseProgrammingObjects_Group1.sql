@@ -1,9 +1,3 @@
--- ============================================================
--- Nintendo Switch Game Recommendation & Library System
--- MODULAR Database Programming Objects
--- ============================================================
---
---
 --   Build small, focused objects and compose them into bigger
 --   ones. 
 --
@@ -1203,4 +1197,5 @@ GO
 --     @Email='sam2@email.com',
 --     @PasswordHash=CONVERT(VARBINARY(256),'hash_sam2'),
 --     @PreferredGenres='Action', @OwnedGameIDs='1,2,5';
+
 
