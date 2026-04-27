@@ -4,15 +4,15 @@ from get_db_connection import get_db_connection
 from mock_data import DEVELOPER_ANALYTICS, is_mock_mode
 
 
-def get_developer_analytics(game_id: int, developer_id: int):
+def get_developer_analytics(game_title: str, developer_id: int):
     if is_mock_mode():
         return DEVELOPER_ANALYTICS
 
     conn = get_db_connection()
     cursor = conn.cursor(as_dict=True)
     cursor.execute(
-        "EXEC sp_GetDeveloperAnalytics %d, %d",
-        (game_id, developer_id),
+        "EXEC sp_GetDeveloperAnalytics %s, %d",
+        (game_title, developer_id),
     )
 
     summary = []

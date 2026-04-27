@@ -37,5 +37,5 @@ def get_next_game_suggestion_endpoint(gamer_id: int):
 
 
 @app.get("/get_developer_analytics/")
-def get_developer_analytics_endpoint(game_id: int, developer_id: int):
-    return get_developer_analytics(game_id, developer_id)
+def get_developer_analytics_endpoint(game_title: str, developer_id: int):
+    return get_developer_analytics(game_title, developer_id)

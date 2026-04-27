@@ -19,7 +19,7 @@
 -- DROP ORDER:    Layer 4 → Layer 3 → Layer 2 → Layer 1
 -- ============================================================
 
-USE MIST_460_Group1;
+USE mist460-api-group1;
 GO
 
 
@@ -945,19 +945,25 @@ GO
 --   formula in one function and all analytics update.
 -- ------------------------------------------------------------
 CREATE PROCEDURE sp_GetDeveloperAnalytics
-    @GameID         INT,
+    @GameTitle      NVARCHAR(200),
     @DeveloperID    INT
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Security: developer can only see their own games
-    IF NOT EXISTS (
-        SELECT 1 FROM Game
-        WHERE GameID = @GameID AND DeveloperID = @DeveloperID
-    )
+    -- Resolve the game by title scoped to this developer (case-insensitive,
+    -- ignores leading/trailing whitespace). Developers will not have two games
+    -- with the same title in their own catalog.
+    DECLARE @GameID INT;
+
+    SELECT @GameID = GameID
+    FROM Game
+    WHERE LTRIM(RTRIM(GameTitle)) = LTRIM(RTRIM(@GameTitle))
+      AND DeveloperID = @DeveloperID;
+
+    IF @GameID IS NULL
     BEGIN
-        RAISERROR('Game not found or access denied.', 16, 1);
+        RAISERROR('Game not found in your catalog. Check the title and try again.', 16, 1);
         RETURN;
     END
 
@@ -1020,7 +1026,7 @@ BEGIN
 
 END;
 GO
--- USAGE: EXEC sp_GetDeveloperAnalytics @GameID=1, @DeveloperID=6;
+-- USAGE: EXEC sp_GetDeveloperAnalytics @GameTitle='Echoes of Aether', @DeveloperID=6;
 
 
 -- ============================================================
