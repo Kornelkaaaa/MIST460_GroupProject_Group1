@@ -31,6 +31,7 @@ IF OBJECT_ID('sp_GetNextGameSuggestion')    IS NOT NULL DROP PROCEDURE sp_GetNex
 GO
 
 -- Layer 3: Single-action procedures (call functions)
+IF OBJECT_ID('procValidateUser')            IS NOT NULL DROP PROCEDURE procValidateUser;
 IF OBJECT_ID('sp_RegisterGamer')            IS NOT NULL DROP PROCEDURE sp_RegisterGamer;
 IF OBJECT_ID('sp_AddGameToLibrary')         IS NOT NULL DROP PROCEDURE sp_AddGameToLibrary;
 IF OBJECT_ID('sp_UpdateGameStatus')         IS NOT NULL DROP PROCEDURE sp_UpdateGameStatus;
@@ -538,6 +539,34 @@ GO
 --   CREATE AFTER Layer 1 and Layer 2.
 -- ============================================================
 -- ============================================================
+
+
+-- ------------------------------------------------------------
+-- procValidateUser
+-- ------------------------------------------------------------
+-- CALLS:    (none — direct lookup)
+-- CALLED BY: API /validate_user/ endpoint
+--
+-- PURPOSE: Authenticates a user by email + password.
+--   Returns AppUserID and Fullname when credentials match,
+--   or no rows when they don't. Used by the login screen.
+-- ------------------------------------------------------------
+CREATE PROCEDURE procValidateUser
+    @username   NVARCHAR(100),   -- email is the login identifier
+    @password   NVARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        AppUserID,
+        FirstName + N' ' + LastName AS Fullname
+    FROM AppUser
+    WHERE Email = @username
+      AND PasswordHash = CONVERT(VARBINARY(256), @password);
+END;
+GO
+-- USAGE: EXEC procValidateUser @username='alex@email.com', @password='hash_alex';
 
 
 -- ------------------------------------------------------------
