@@ -38,12 +38,13 @@ IF OBJECT_ID('sp_UpdateGameStatus')         IS NOT NULL DROP PROCEDURE sp_Update
 IF OBJECT_ID('sp_SubmitReview')             IS NOT NULL DROP PROCEDURE sp_SubmitReview;
 IF OBJECT_ID('sp_GetRecommendations')       IS NOT NULL DROP PROCEDURE sp_GetRecommendations;
 IF OBJECT_ID('sp_SearchGamesByKeyword')     IS NOT NULL DROP PROCEDURE sp_SearchGamesByKeyword;
+-- Guard procedures (called by other Layer 3 procs)
+IF OBJECT_ID('sp_AssertGamerExists')        IS NOT NULL DROP PROCEDURE sp_AssertGamerExists;
+IF OBJECT_ID('sp_ResolveGameID')            IS NOT NULL DROP PROCEDURE sp_ResolveGameID;
 GO
 
 -- Layer 2: Triggers (call Layer 1 functions)
-IF OBJECT_ID('trg_AfterInsertReview')               IS NOT NULL DROP TRIGGER trg_AfterInsertReview;
-IF OBJECT_ID('trg_AfterUpdateReview')               IS NOT NULL DROP TRIGGER trg_AfterUpdateReview;
-IF OBJECT_ID('trg_AfterDeleteReview')               IS NOT NULL DROP TRIGGER trg_AfterDeleteReview;
+IF OBJECT_ID('trg_GamerReview_RecalcRating')        IS NOT NULL DROP TRIGGER trg_GamerReview_RecalcRating;
 IF OBJECT_ID('trg_PreventDuplicateLibraryEntry')    IS NOT NULL DROP TRIGGER trg_PreventDuplicateLibraryEntry;
 IF OBJECT_ID('trg_AutoInitPlayerStats')             IS NOT NULL DROP TRIGGER trg_AutoInitPlayerStats;
 IF OBJECT_ID('trg_BlockFinishedGameStatusChange')   IS NOT NULL DROP TRIGGER trg_BlockFinishedGameStatusChange;
@@ -60,6 +61,7 @@ IF OBJECT_ID('fn_GamerOwnsGame')            IS NOT NULL DROP FUNCTION fn_GamerOw
 IF OBJECT_ID('fn_GamerAlreadyReviewed')     IS NOT NULL DROP FUNCTION fn_GamerAlreadyReviewed;
 IF OBJECT_ID('fn_GamerExists')              IS NOT NULL DROP FUNCTION fn_GamerExists;
 IF OBJECT_ID('fn_GameExists')               IS NOT NULL DROP FUNCTION fn_GameExists;
+IF OBJECT_ID('fn_GetGameIDByTitle')         IS NOT NULL DROP FUNCTION fn_GetGameIDByTitle;
 GO
 
 
@@ -117,6 +119,50 @@ BEGIN
 END;
 GO
 -- USAGE: SELECT dbo.fn_GameExists(99);   -- returns 0 (not found)
+
+
+-- ------------------------------------------------------------
+-- fn_GetGameIDByTitle  (Scalar)
+-- ------------------------------------------------------------
+-- REUSED BY: sp_AddGameToLibrary, sp_UpdateGameStatus,
+--            sp_SubmitReview, sp_GetDeveloperAnalytics
+--
+-- PURPOSE: Resolves a game title to its GameID with a single
+--   reusable lookup (case-insensitive, trims whitespace).
+--   Returns one of three possible values so callers can raise
+--   the appropriate error message:
+--
+--     * a positive INT  -> exactly one match (the GameID)
+--     *  NULL           -> no game with that title
+--     *  -1             -> multiple games share that title (ambiguous)
+--
+--   Centralizing this here means every procedure that accepts
+--   a title parameter has identical lookup behavior.
+-- ------------------------------------------------------------
+CREATE FUNCTION fn_GetGameIDByTitle (@GameTitle NVARCHAR(200))
+RETURNS INT
+AS
+BEGIN
+    DECLARE @MatchCount INT;
+    DECLARE @GameID     INT;
+
+    SELECT @MatchCount = COUNT(*)
+    FROM Game
+    WHERE LTRIM(RTRIM(GameTitle)) = LTRIM(RTRIM(@GameTitle));
+
+    IF @MatchCount = 0  RETURN NULL;
+    IF @MatchCount > 1  RETURN -1;
+
+    SELECT @GameID = GameID
+    FROM Game
+    WHERE LTRIM(RTRIM(GameTitle)) = LTRIM(RTRIM(@GameTitle));
+
+    RETURN @GameID;
+END;
+GO
+-- USAGE: SELECT dbo.fn_GetGameIDByTitle('Diablo IV');         -- returns 2
+-- USAGE: SELECT dbo.fn_GetGameIDByTitle('Made-up Game');      -- returns NULL
+-- USAGE: SELECT dbo.fn_GetGameIDByTitle('Duplicate Title');   -- returns -1
 
 
 -- ------------------------------------------------------------
@@ -364,76 +410,33 @@ GO
 
 
 -- ------------------------------------------------------------
--- trg_AfterInsertReview
+-- trg_GamerReview_RecalcRating
 -- ------------------------------------------------------------
 -- CALLS: fn_GetGameAverageRating (Layer 1)
 --
--- PURPOSE: Auto-updates Game.AverageRating after every new
---   review. Uses the shared fn_GetGameAverageRating so the
---   calculation logic is never duplicated.
+-- PURPOSE: Single trigger that recalculates Game.AverageRating
+--   whenever a review is inserted, updated, or deleted.
+--   (Replaces three separate triggers — same logic, one place.)
+--
+-- The union of inserted+deleted covers every affected GameID:
+--   INSERT     -> only inserted has rows
+--   DELETE     -> only deleted has rows
+--   UPDATE     -> both have rows (same GameID, different Rating)
 -- ------------------------------------------------------------
-CREATE TRIGGER trg_AfterInsertReview
+CREATE TRIGGER trg_GamerReview_RecalcRating
 ON GamerReview
-AFTER INSERT
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Call Layer 1 function to recalculate average for affected game(s)
     UPDATE Game
-    SET AverageRating = dbo.fn_GetGameAverageRating(i.GameID)
-    FROM Game
-        JOIN inserted i ON Game.GameID = i.GameID;
-END;
-GO
-
-
--- ------------------------------------------------------------
--- trg_AfterUpdateReview
--- ------------------------------------------------------------
--- CALLS: fn_GetGameAverageRating (Layer 1)
---
--- PURPOSE: Recalculates AverageRating when a review's Rating
---   is changed. Skips recalculation if only ReviewText changed.
--- ------------------------------------------------------------
-CREATE TRIGGER trg_AfterUpdateReview
-ON GamerReview
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    IF UPDATE(Rating)
-    BEGIN
-        -- Reuse the same Layer 1 function as trg_AfterInsertReview
-        UPDATE Game
-        SET AverageRating = dbo.fn_GetGameAverageRating(i.GameID)
-        FROM Game
-            JOIN inserted i ON Game.GameID = i.GameID;
-    END
-END;
-GO
-
-
--- ------------------------------------------------------------
--- trg_AfterDeleteReview
--- ------------------------------------------------------------
--- CALLS: fn_GetGameAverageRating (Layer 1)
---
--- PURPOSE: Recalculates AverageRating when a review is deleted.
--- ------------------------------------------------------------
-CREATE TRIGGER trg_AfterDeleteReview
-ON GamerReview
-AFTER DELETE
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Same function, different virtual table ('deleted' not 'inserted')
-    UPDATE Game
-    SET AverageRating = ISNULL(dbo.fn_GetGameAverageRating(d.GameID), 0.0)
-    FROM Game
-        JOIN deleted d ON Game.GameID = d.GameID;
+    SET AverageRating = ISNULL(dbo.fn_GetGameAverageRating(Game.GameID), 0.0)
+    WHERE Game.GameID IN (
+        SELECT GameID FROM inserted
+        UNION
+        SELECT GameID FROM deleted
+    );
 END;
 GO
 
@@ -539,6 +542,66 @@ GO
 --   CREATE AFTER Layer 1 and Layer 2.
 -- ============================================================
 -- ============================================================
+
+
+-- ============================================================
+-- LAYER 3a: GUARD PROCEDURES
+-- Tiny procs that wrap a check + THROW so callers can replace
+-- repeated 5- to 13-line validation blocks with a single EXEC.
+-- ============================================================
+
+
+-- ------------------------------------------------------------
+-- sp_AssertGamerExists
+-- ------------------------------------------------------------
+-- CALLS:    fn_GamerExists (Layer 1)
+-- CALLED BY: sp_AddGameToLibrary, sp_GetRecommendations,
+--            sp_GetNextGameSuggestion
+--
+-- PURPOSE: Throws "Gamer not found." when the GamerID does not
+--   exist. Replaces a 5-line IF/RAISERROR/RETURN block in every
+--   procedure that needs the check.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_AssertGamerExists
+    @GamerID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF dbo.fn_GamerExists(@GamerID) = 0
+        THROW 50001, 'Gamer not found.', 1;
+END;
+GO
+-- USAGE: EXEC sp_AssertGamerExists @GamerID = 1;
+
+
+-- ------------------------------------------------------------
+-- sp_ResolveGameID
+-- ------------------------------------------------------------
+-- CALLS:    fn_GetGameIDByTitle (Layer 1)
+-- CALLED BY: sp_AddGameToLibrary, sp_UpdateGameStatus,
+--            sp_SubmitReview, sp_GetDeveloperAnalytics
+--
+-- PURPOSE: Resolves a title to a GameID and throws a clear
+--   error for the no-match / ambiguous-match cases. Callers
+--   replace ~13 lines of branching with one EXEC.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_ResolveGameID
+    @GameTitle  NVARCHAR(200),
+    @GameID     INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @GameID = dbo.fn_GetGameIDByTitle(@GameTitle);
+
+    IF @GameID IS NULL
+        THROW 50002, 'Game not found in catalog. Check the title and try again.', 1;
+    IF @GameID = -1
+        THROW 50003, 'Multiple games share that title — please be more specific.', 1;
+END;
+GO
+-- USAGE: DECLARE @id INT;
+--        EXEC sp_ResolveGameID @GameTitle='Diablo IV', @GameID=@id OUTPUT;
 
 
 -- ------------------------------------------------------------
@@ -650,23 +713,15 @@ GO
 -- ------------------------------------------------------------
 CREATE PROCEDURE sp_AddGameToLibrary
     @GamerID    INT,
-    @GameID     INT
+    @GameTitle  NVARCHAR(200)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- All three validations use Layer 1 functions
-    IF dbo.fn_GamerExists(@GamerID) = 0
-    BEGIN
-        RAISERROR('Gamer not found.', 16, 1);
-        RETURN;
-    END
+    EXEC sp_AssertGamerExists @GamerID;
 
-    IF dbo.fn_GameExists(@GameID) = 0
-    BEGIN
-        RAISERROR('Game not found in catalog.', 16, 1);
-        RETURN;
-    END
+    DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
 
     IF dbo.fn_GamerOwnsGame(@GamerID, @GameID) = 1
     BEGIN
@@ -698,7 +753,7 @@ BEGIN
     END CATCH
 END;
 GO
--- USAGE: EXEC sp_AddGameToLibrary @GamerID=1, @GameID=3;
+-- USAGE: EXEC sp_AddGameToLibrary @GamerID=1, @GameTitle='Diablo IV';
 
 
 -- ------------------------------------------------------------
@@ -713,12 +768,15 @@ GO
 -- ------------------------------------------------------------
 CREATE PROCEDURE sp_UpdateGameStatus
     @GamerID        INT,
-    @GameID         INT,
+    @GameTitle      NVARCHAR(200),
     @NewStatus      NVARCHAR(30),
     @HoursPlayed    DECIMAL(8,2) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
 
     -- Use Layer 1 function for ownership check
     IF dbo.fn_GamerOwnsGame(@GamerID, @GameID) = 0
@@ -757,7 +815,7 @@ BEGIN
 
 END;
 GO
--- USAGE: EXEC sp_UpdateGameStatus @GamerID=1, @GameID=1, @NewStatus='In Progress', @HoursPlayed=12.5;
+-- USAGE: EXEC sp_UpdateGameStatus @GamerID=1, @GameTitle='Call of Duty: Modern Warfare III', @NewStatus='In Progress', @HoursPlayed=12.5;
 
 
 -- ------------------------------------------------------------
@@ -773,12 +831,15 @@ GO
 -- ------------------------------------------------------------
 CREATE PROCEDURE sp_SubmitReview
     @GamerID    INT,
-    @GameID     INT,
+    @GameTitle  NVARCHAR(200),
     @Rating     DECIMAL(3,1),
     @ReviewText NVARCHAR(MAX) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
 
     -- Both validations use Layer 1 functions
     IF dbo.fn_GamerOwnsGame(@GamerID, @GameID) = 0
@@ -817,7 +878,7 @@ BEGIN
     END CATCH
 END;
 GO
--- USAGE: EXEC sp_SubmitReview @GamerID=1, @GameID=2, @Rating=4.5, @ReviewText='Amazing!';
+-- USAGE: EXEC sp_SubmitReview @GamerID=1, @GameTitle='Diablo IV', @Rating=4.5, @ReviewText='Amazing!';
 
 
 -- ------------------------------------------------------------
@@ -839,12 +900,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Use Layer 1 function for validation
-    IF dbo.fn_GamerExists(@GamerID) = 0
-    BEGIN
-        RAISERROR('Gamer not found.', 16, 1);
-        RETURN;
-    END
+    EXEC sp_AssertGamerExists @GamerID;
 
     DECLARE @PreferredGenres  NVARCHAR(200);
     DECLARE @PreferredMode    NVARCHAR(50);
@@ -951,19 +1007,16 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Resolve the game by title scoped to this developer (case-insensitive,
-    -- ignores leading/trailing whitespace). Developers will not have two games
-    -- with the same title in their own catalog.
     DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
 
-    SELECT @GameID = GameID
-    FROM Game
-    WHERE LTRIM(RTRIM(GameTitle)) = LTRIM(RTRIM(@GameTitle))
-      AND DeveloperID = @DeveloperID;
-
-    IF @GameID IS NULL
+    -- Security: developer can only see analytics for games they own
+    IF NOT EXISTS (
+        SELECT 1 FROM Game
+        WHERE GameID = @GameID AND DeveloperID = @DeveloperID
+    )
     BEGIN
-        RAISERROR('Game not found in your catalog. Check the title and try again.', 16, 1);
+        RAISERROR('Access denied — this game is not in your catalog.', 16, 1);
         RETURN;
     END
 
@@ -989,22 +1042,25 @@ BEGIN
     GROUP BY g.GameTitle, g.YearReleased;
 
     -- ── RESULT SET 2: Review Sentiment ──────────────────────
+    -- CTE assigns the sentiment bucket once so the GROUP BY
+    -- doesn't have to repeat the CASE expression.
+    WITH BucketedReviews AS (
+        SELECT
+            CASE
+                WHEN Rating >= 4.0 THEN 'Positive (4.0 - 5.0)'
+                WHEN Rating >= 2.5 THEN 'Mixed (2.5 - 3.9)'
+                ELSE                    'Negative (0.0 - 2.4)'
+            END AS SentimentBucket,
+            Rating
+        FROM GamerReview
+        WHERE GameID = @GameID
+    )
     SELECT
-        CASE
-            WHEN gr.Rating >= 4.0 THEN 'Positive (4.0 - 5.0)'
-            WHEN gr.Rating >= 2.5 THEN 'Mixed (2.5 - 3.9)'
-            ELSE                       'Negative (0.0 - 2.4)'
-        END                 AS SentimentBucket,
-        COUNT(*)            AS ReviewCount,
-        AVG(gr.Rating)      AS AvgRating
-    FROM GamerReview gr
-    WHERE gr.GameID = @GameID
-    GROUP BY
-        CASE
-            WHEN gr.Rating >= 4.0 THEN 'Positive (4.0 - 5.0)'
-            WHEN gr.Rating >= 2.5 THEN 'Mixed (2.5 - 3.9)'
-            ELSE                       'Negative (0.0 - 2.4)'
-        END
+        SentimentBucket,
+        COUNT(*)        AS ReviewCount,
+        AVG(Rating)     AS AvgRating
+    FROM BucketedReviews
+    GROUP BY SentimentBucket
     ORDER BY AvgRating DESC;
 
     -- ── RESULT SET 3: Player Profile ────────────────────────
@@ -1061,12 +1117,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Layer 1 validation function
-    IF dbo.fn_GamerExists(@GamerID) = 0
-    BEGIN
-        RAISERROR('Gamer not found.', 16, 1);
-        RETURN;
-    END
+    EXEC sp_AssertGamerExists @GamerID;
 
     -- Layer 1 function to count finished games for the suggestion message
     DECLARE @CompletedCount INT = dbo.fn_GetGamerCompletedCount(@GamerID);
@@ -1141,9 +1192,10 @@ CREATE PROCEDURE sp_FullGamerOnboarding
     @PreferredPlayStyle     NVARCHAR(100)   = NULL,
     @PreferredMode          NVARCHAR(50)    = NULL,
     @AvailablePlayTime      DECIMAL(5,2)    = NULL,
-    -- Optional: comma-separated GameIDs the gamer already owns
-    -- e.g. '1,3,5' — parsed and added to library automatically
-    @OwnedGameIDs           NVARCHAR(200)   = NULL
+    -- Optional: pipe-separated Game Titles the gamer already owns
+    -- e.g. 'Diablo IV|Far Cry 6|EA Sports FC 25'
+    -- (pipe is used instead of comma because some game titles contain commas)
+    @OwnedGameTitles        NVARCHAR(2000)  = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1168,31 +1220,28 @@ BEGIN
             @NewGamerID          = @NewGamerID OUTPUT;
 
         -- STEP 2: If the gamer already owns games, add them to their library
-        -- Parse the comma-separated list and call sp_AddGameToLibrary for each
-        IF @OwnedGameIDs IS NOT NULL
+        -- Parse the pipe-separated list of titles and call sp_AddGameToLibrary for each
+        IF @OwnedGameTitles IS NOT NULL
         BEGIN
-            DECLARE @GameID     INT;
             DECLARE @Pos        INT = 1;
-            DECLARE @Remaining  NVARCHAR(200) = @OwnedGameIDs + ',';
-            DECLARE @NextComma  INT;
-            DECLARE @Token      NVARCHAR(20);
+            DECLARE @Remaining  NVARCHAR(2000) = @OwnedGameTitles + N'|';
+            DECLARE @NextPipe   INT;
+            DECLARE @Title      NVARCHAR(200);
 
-            -- Loop through each GameID in the comma-separated string
             WHILE @Pos <= LEN(@Remaining)
             BEGIN
-                SET @NextComma = CHARINDEX(',', @Remaining, @Pos);
-                IF @NextComma = 0 BREAK;
+                SET @NextPipe = CHARINDEX(N'|', @Remaining, @Pos);
+                IF @NextPipe = 0 BREAK;
 
-                SET @Token  = LTRIM(RTRIM(SUBSTRING(@Remaining, @Pos, @NextComma - @Pos)));
-                SET @GameID = TRY_CAST(@Token AS INT);
+                SET @Title = LTRIM(RTRIM(SUBSTRING(@Remaining, @Pos, @NextPipe - @Pos)));
 
-                -- Call the Layer 3 procedure for each valid GameID
-                IF @GameID IS NOT NULL
+                -- Call the Layer 3 procedure for each non-empty title
+                IF LEN(@Title) > 0
                     EXEC sp_AddGameToLibrary
-                        @GamerID = @NewGamerID,
-                        @GameID  = @GameID;
+                        @GamerID   = @NewGamerID,
+                        @GameTitle = @Title;
 
-                SET @Pos = @NextComma + 1;
+                SET @Pos = @NextPipe + 1;
             END
         END
 
@@ -1226,11 +1275,12 @@ GO
 --     @PreferredGenres='Action, RPG', @PreferredDifficulty='Hard',
 --     @PreferredMode='Single-Player', @AvailablePlayTime=20.0;
 --
--- USAGE (gamer who already owns games 1, 2, and 5):
+-- USAGE (gamer who already owns Diablo IV, Far Cry 6, and Battlefield 2042):
 -- EXEC sp_FullGamerOnboarding
 --     @FirstName='Sam', @LastName='Lee',
 --     @Email='sam2@email.com',
 --     @PasswordHash=CONVERT(VARBINARY(256),'hash_sam2'),
---     @PreferredGenres='Action', @OwnedGameIDs='1,2,5';
+--     @PreferredGenres='Action',
+--     @OwnedGameTitles='Diablo IV|Far Cry 6|Battlefield 2042';
 
 
