@@ -1,18 +1,17 @@
 import streamlit as st
 
-from fetch_data import fetch_data
+from fetch_data import current_user_id, fetch_data
 
 
 def search_games_ui():
     st.header("Search Games by Keyword")
 
     keyword = st.text_input("Keyword (title, description, studio, or genre)")
-    default_id = st.session_state.get("app_user_id", "")
-    gamer_id = st.text_input(
-        "Gamer ID (optional — flags games you already own)",
-        value=str(default_id) if default_id else "",
-    )
     top_n = st.number_input("Maximum results", min_value=1, max_value=100, value=10)
+
+    logged_in = current_user_id()
+    if logged_in is not None:
+        st.caption(f"Will flag games already in Gamer {logged_in}'s library.")
 
     if st.button("Search"):
         if not keyword.strip():
@@ -20,8 +19,8 @@ def search_games_ui():
             return
 
         params = {"keyword": keyword.strip(), "top_n": int(top_n)}
-        if gamer_id.strip().isdigit():
-            params["gamer_id"] = int(gamer_id)
+        if logged_in is not None:
+            params["gamer_id"] = logged_in
 
         df = fetch_data("search_games_by_keyword/", params)
 

@@ -1,23 +1,23 @@
 import streamlit as st
 
-from fetch_data import fetch_data
+from fetch_data import fetch_data, require_login
 
 
 def get_recommendations_ui():
     st.header("Get Game Recommendations")
 
-    default_id = st.session_state.get("app_user_id", "")
-    gamer_id = st.text_input("Gamer ID", value=str(default_id) if default_id else "")
-    top_n = st.number_input("How many recommendations?", min_value=1, max_value=50, value=6)
+    gamer_id = require_login()
+    if gamer_id is None:
+        return
+
+    top_n = st.number_input(
+        "How many recommendations?", min_value=1, max_value=50, value=6
+    )
 
     if st.button("Fetch Recommendations"):
-        if not gamer_id.strip().isdigit():
-            st.error("Gamer ID must be a number.")
-            return
-
         df = fetch_data(
             "get_recommendations/",
-            {"gamer_id": int(gamer_id), "top_n": int(top_n)},
+            {"gamer_id": gamer_id, "top_n": int(top_n)},
         )
 
         if df is not None and not df.empty:

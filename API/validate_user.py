@@ -19,6 +19,7 @@ def validate_user(username: str, password: str):
         {
             "AppUserID": row["AppUserID"],
             "Fullname": row["Fullname"],
+            "UserRole": row["UserRole"],
         }
         for row in rows
     ]

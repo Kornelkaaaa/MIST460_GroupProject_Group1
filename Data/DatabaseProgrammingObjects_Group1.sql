@@ -623,7 +623,8 @@ BEGIN
 
     SELECT
         AppUserID,
-        FirstName + N' ' + LastName AS Fullname
+        FirstName + N' ' + LastName AS Fullname,
+        UserRole
     FROM AppUser
     WHERE Email = @username
       AND PasswordHash = HASHBYTES('SHA2_256', @password);

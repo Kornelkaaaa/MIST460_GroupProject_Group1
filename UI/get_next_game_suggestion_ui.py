@@ -1,20 +1,17 @@
 import streamlit as st
 
-from fetch_data import fetch_data
+from fetch_data import fetch_data, require_login
 
 
 def get_next_game_suggestion_ui():
     st.header("What Should I Play Next?")
 
-    default_id = st.session_state.get("app_user_id", "")
-    gamer_id = st.text_input("Gamer ID", value=str(default_id) if default_id else "")
+    gamer_id = require_login()
+    if gamer_id is None:
+        return
 
     if st.button("Get Suggestion"):
-        if not gamer_id.strip().isdigit():
-            st.error("Gamer ID must be a number.")
-            return
-
-        df = fetch_data("get_next_game_suggestion/", {"gamer_id": int(gamer_id)})
+        df = fetch_data("get_next_game_suggestion/", {"gamer_id": gamer_id})
 
         if df is not None and not df.empty:
             row = df.iloc[0]

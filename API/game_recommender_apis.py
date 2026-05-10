@@ -12,6 +12,9 @@ from add_game_to_library import add_game_to_library
 from update_game_status import update_game_status
 from submit_review import submit_review
 from full_gamer_onboarding import full_gamer_onboarding
+from get_gamer_library import get_gamer_library
+from get_all_games import get_all_games
+from get_developer_games import get_developer_games
 
 
 app = FastAPI()
@@ -44,6 +47,21 @@ def get_next_game_suggestion_endpoint(gamer_id: int):
 @app.get("/get_developer_analytics/")
 def get_developer_analytics_endpoint(game_title: str, developer_id: int):
     return get_developer_analytics(game_title, developer_id)
+
+
+@app.get("/get_gamer_library/")
+def get_gamer_library_endpoint(gamer_id: int):
+    return get_gamer_library(gamer_id)
+
+
+@app.get("/get_all_games/")
+def get_all_games_endpoint():
+    return get_all_games()
+
+
+@app.get("/get_developer_games/")
+def get_developer_games_endpoint(developer_id: int):
+    return get_developer_games(developer_id)
 
 
 @app.get("/register_gamer/")
