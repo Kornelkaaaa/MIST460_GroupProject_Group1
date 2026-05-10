@@ -1,4 +1,4 @@
-USE mist460-api-group1;
+--USE mist460-api-group1;
 GO
 
 
@@ -43,7 +43,8 @@ CREATE TABLE Gamer (
     PreferredGenres         NVARCHAR(200)   NULL,
     PreferredDifficulty     NVARCHAR(50)    NULL
         CONSTRAINT CK_Gamer_Difficulty CHECK (PreferredDifficulty IN (N'Easy', N'Medium', N'Hard', N'Expert', NULL)),
-    PreferredPlayStyle      NVARCHAR(100)   NULL,
+    PreferredPlayStyle      NVARCHAR(100)   NULL
+        CONSTRAINT CK_Gamer_PlayStyle CHECK (PreferredPlayStyle IN (N'Completionist', N'Casual', N'Speedrunner', N'Story-Driven', NULL)),
     PreferredMode           NVARCHAR(50)    NULL
         CONSTRAINT CK_Gamer_Mode CHECK (PreferredMode IN (N'Single-Player', N'Multiplayer', N'Co-op', NULL)),
     AvailablePlayTime       DECIMAL(5,2)    NULL    -- hours per week

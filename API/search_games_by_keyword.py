@@ -3,21 +3,9 @@ from typing import Optional
 import pymssql
 
 from get_db_connection import get_db_connection
-from mock_data import SEARCH_RESULTS, is_mock_mode
 
 
 def search_games_by_keyword(keyword: str, gamer_id: Optional[int] = None, top_n: int = 10):
-    if is_mock_mode():
-        kw = (keyword or "").lower()
-        filtered = [
-            r for r in SEARCH_RESULTS
-            if kw in r["GameTitle"].lower()
-            or kw in r["GameDescription"].lower()
-            or kw in r["PrimaryGenre"].lower()
-            or kw in r["StudioName"].lower()
-        ]
-        return {"data": (filtered or SEARCH_RESULTS)[:top_n]}
-
     conn = get_db_connection()
     cursor = conn.cursor(as_dict=True)
     cursor.execute(

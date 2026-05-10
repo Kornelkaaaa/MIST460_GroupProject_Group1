@@ -1,4 +1,4 @@
-USE mist460-api-group1;
+--USE mist460-api-group1;
 GO
 
 -- ============================================================
@@ -7,16 +7,16 @@ GO
 
 INSERT INTO AppUser (FirstName, LastName, Phone, Email, PasswordHash, UserRole)
 VALUES
--- Gamers
-(N'Alex',    N'Rivera',   N'304-555-0101', N'alex.rivera@email.com',      CONVERT(VARBINARY(256), 'hash_alex123'),    N'Gamer'),
-(N'Jordan',  N'Kim',      N'304-555-0102', N'jordan.kim@email.com',       CONVERT(VARBINARY(256), 'hash_jordan456'),  N'Gamer'),
-(N'Morgan',  N'Patel',    N'304-555-0103', N'morgan.patel@email.com',     CONVERT(VARBINARY(256), 'hash_morgan789'),  N'Gamer'),
-(N'Taylor',  N'Nguyen',   N'304-555-0104', N'taylor.nguyen@email.com',    CONVERT(VARBINARY(256), 'hash_taylor321'),  N'Gamer'),
-(N'Casey',   N'Johnson',  NULL,            N'casey.johnson@email.com',    CONVERT(VARBINARY(256), 'hash_casey654'),   N'Gamer'),
+-- Gamers (plaintext password listed in the comment for testing only)
+(N'Alex',    N'Rivera',   N'304-555-0101', N'alex.rivera@email.com',      HASHBYTES('SHA2_256', N'alex123'),    N'Gamer'),     -- pwd: alex123
+(N'Jordan',  N'Kim',      N'304-555-0102', N'jordan.kim@email.com',       HASHBYTES('SHA2_256', N'jordan456'),  N'Gamer'),     -- pwd: jordan456
+(N'Morgan',  N'Patel',    N'304-555-0103', N'morgan.patel@email.com',     HASHBYTES('SHA2_256', N'morgan789'),  N'Gamer'),     -- pwd: morgan789
+(N'Taylor',  N'Nguyen',   N'304-555-0104', N'taylor.nguyen@email.com',    HASHBYTES('SHA2_256', N'taylor321'),  N'Gamer'),     -- pwd: taylor321
+(N'Casey',   N'Johnson',  NULL,            N'casey.johnson@email.com',    HASHBYTES('SHA2_256', N'casey654'),   N'Gamer'),     -- pwd: casey654
 -- Developers (real AAA publishers)
-(N'Bobby',   N'Kotick',   N'310-555-0201', N'bobby.kotick@activision.com',CONVERT(VARBINARY(256), 'hash_act111'),     N'Developer'),
-(N'Andrew',  N'Wilson',   N'650-555-0202', N'andrew.wilson@ea.com',       CONVERT(VARBINARY(256), 'hash_ea222'),      N'Developer'),
-(N'Yves',    N'Guillemot',N'212-555-0203', N'yves.g@ubisoft.com',         CONVERT(VARBINARY(256), 'hash_ubi333'),     N'Developer');
+(N'Bobby',   N'Kotick',   N'310-555-0201', N'bobby.kotick@activision.com',HASHBYTES('SHA2_256', N'act111'),     N'Developer'), -- pwd: act111
+(N'Andrew',  N'Wilson',   N'650-555-0202', N'andrew.wilson@ea.com',       HASHBYTES('SHA2_256', N'ea222'),      N'Developer'), -- pwd: ea222
+(N'Yves',    N'Guillemot',N'212-555-0203', N'yves.g@ubisoft.com',         HASHBYTES('SHA2_256', N'ubi333'),     N'Developer'); -- pwd: ubi333
 GO
 
 -- ============================================================
@@ -25,11 +25,11 @@ GO
 
 INSERT INTO Gamer (GamerID, PreferredGenres, PreferredDifficulty, PreferredPlayStyle, PreferredMode, AvailablePlayTime)
 VALUES
-(1, N'FPS, Action',        N'Hard',    N'Completionist',  N'Multiplayer',   20.0),
-(2, N'Sports, Racing',     N'Medium',  N'Casual',         N'Multiplayer',   10.0),
-(3, N'RPG, Action',        N'Expert',  N'Speedrunner',    N'Single-Player', 25.0),
-(4, N'Adventure, Action',  N'Medium',  N'Story-Driven',   N'Single-Player', 12.0),
-(5, N'FPS, Sports',        N'Easy',    N'Casual',         N'Co-op',          8.0);
+(1, N'First-Person Shooter, Action',           N'Hard',    N'Completionist',  N'Multiplayer',   20.0),
+(2, N'Sports, Racing, Platformer',             N'Medium',  N'Casual',         N'Multiplayer',   10.0),
+(3, N'RPG, Action',                            N'Expert',  N'Speedrunner',    N'Single-Player', 25.0),
+(4, N'Adventure, Action, Platformer',          N'Medium',  N'Story-Driven',   N'Single-Player', 12.0),
+(5, N'First-Person Shooter, Sports',           N'Easy',    N'Casual',         N'Co-op',          8.0);
 GO
 
 -- ============================================================
@@ -122,17 +122,17 @@ GO
 -- PlayerStats (9 rows - one per Library entry)
 -- ============================================================
 
-INSERT INTO PlayerStats (LibraryID, HoursPlayed, Status)
+INSERT INTO PlayerStats (LibraryID, GameID, HoursPlayed, Status)
 VALUES
-(1,  210.0, N'In Progress'),   -- Alex / CoD: MW3
-(2,  340.0, N'Completed'),     -- Alex / Rainbow Six Siege
-(3,   55.0, N'In Progress'),   -- Jordan / EA Sports FC 25
-(4,   80.0, N'Completed'),     -- Jordan / CoD: MW3
-(5,  125.0, N'In Progress'),   -- Morgan / Diablo IV
-(6,   40.0, N'Completed'),     -- Morgan / AC Mirage
-(7,   38.0, N'In Progress'),   -- Taylor / AC Mirage
-(8,   22.0, N'Abandoned'),     -- Taylor / Far Cry 6
-(9,   15.0, N'In Progress');   -- Casey / Battlefield 2042
+(1, 1, 210.0, N'In Progress'),   -- Alex / CoD: MW3
+(2, 9, 340.0, N'Completed'),     -- Alex / Rainbow Six Siege
+(3, 4,  55.0, N'In Progress'),   -- Jordan / EA Sports FC 25
+(4, 1,  80.0, N'Completed'),     -- Jordan / CoD: MW3
+(5, 2, 125.0, N'In Progress'),   -- Morgan / Diablo IV
+(6, 7,  40.0, N'Completed'),     -- Morgan / AC Mirage
+(7, 7,  38.0, N'In Progress'),   -- Taylor / AC Mirage
+(8, 8,  22.0, N'Abandoned'),     -- Taylor / Far Cry 6
+(9, 5,  15.0, N'In Progress');   -- Casey / Battlefield 2042
 GO
 
 -- ============================================================
@@ -150,4 +150,53 @@ VALUES
 (4, 7, N'Loved the setting and story. Wish it were a bit longer but very enjoyable.',                 4.0, '2023-12-01'),
 (4, 8, N'Far Cry 6 looks gorgeous but the story does not live up to the hype.',                      3.3, '2022-02-14'),
 (5, 5, N'Battlefield 2042 had a rough launch but it has improved a lot with patches.',                3.5, '2022-06-30');
+GO
+
+-- ============================================================
+-- Nintendo (AppUser + Developer) and Mario games
+-- ============================================================
+
+INSERT INTO AppUser (FirstName, LastName, Phone, Email, PasswordHash, UserRole)
+VALUES
+(N'Shigeru', N'Miyamoto', N'425-555-0204', N'shigeru.miyamoto@nintendo.com', HASHBYTES('SHA2_256', N'nin444'), N'Developer'); -- pwd: nin444
+GO
+
+INSERT INTO Developer (DeveloperID, StudioName, StudioWebsite)
+VALUES
+(9, N'Nintendo', N'https://www.nintendo.com');
+GO
+
+-- New genre for Mario titles
+INSERT INTO Genre (GenreName)
+VALUES
+(N'Platformer');
+GO
+
+-- Mario games (DeveloperID 9 = Nintendo)
+INSERT INTO Game (DeveloperID, GameTitle, GameDescription, YearReleased, AverageRating)
+VALUES
+(9, N'Super Mario Odyssey',              N'Globe-trotting 3D platformer where Mario teams up with Cappy to rescue Princess Peach from Bowser.',          2017, 4.80),
+(9, N'Super Mario Bros. Wonder',         N'Side-scrolling platformer with Wonder Flowers that twist levels in unpredictable, magical ways.',              2023, 4.70),
+(9, N'Super Mario Galaxy',               N'3D platformer set across spherical galaxies with gravity-bending level design.',                                2007, 4.90),
+(9, N'Super Mario 64',                   N'The original 3D Mario adventure through the paintings of Princess Peach''s castle.',                            1996, 4.60),
+(9, N'Mario Kart 8 Deluxe',              N'Definitive kart racer featuring every track and character from the Wii U original plus Booster Course Pass.',   2017, 4.80),
+(9, N'Paper Mario: The Thousand-Year Door', N'Turn-based RPG remake following Mario''s paper-thin adventure to find the seven Crystal Stars.',              2024, 4.50),
+(9, N'Super Mario Sunshine',             N'Tropical 3D platformer where Mario uses the FLUDD water pack to clean up Isle Delfino.',                       2002, 4.20),
+(9, N'New Super Mario Bros. U Deluxe',   N'Classic 2D side-scrolling Mario action with up to four-player co-op across the Mushroom Kingdom.',             2019, 4.30);
+GO
+
+-- GameGenre mappings for Mario games (GameIDs 10-17, Platformer GenreID = 10)
+INSERT INTO GameGenre (GameID, GenreID)
+VALUES
+(10, 10),  -- Super Mario Odyssey            -> Platformer
+(10, 5),   -- Super Mario Odyssey            -> Adventure
+(11, 10),  -- Super Mario Bros. Wonder       -> Platformer
+(12, 10),  -- Super Mario Galaxy             -> Platformer
+(12, 5),   -- Super Mario Galaxy             -> Adventure
+(13, 10),  -- Super Mario 64                 -> Platformer
+(14, 6),   -- Mario Kart 8 Deluxe            -> Racing
+(15, 4),   -- Paper Mario: TTYD              -> RPG
+(15, 5),   -- Paper Mario: TTYD              -> Adventure
+(16, 10),  -- Super Mario Sunshine           -> Platformer
+(17, 10);  -- New Super Mario Bros. U Deluxe -> Platformer
 GO

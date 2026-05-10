@@ -7,6 +7,11 @@ from get_recommendations import get_recommendations
 from search_games_by_keyword import search_games_by_keyword
 from get_next_game_suggestion import get_next_game_suggestion
 from get_developer_analytics import get_developer_analytics
+from register_gamer import register_gamer
+from add_game_to_library import add_game_to_library
+from update_game_status import update_game_status
+from submit_review import submit_review
+from full_gamer_onboarding import full_gamer_onboarding
 
 
 app = FastAPI()
@@ -39,3 +44,84 @@ def get_next_game_suggestion_endpoint(gamer_id: int):
 @app.get("/get_developer_analytics/")
 def get_developer_analytics_endpoint(game_title: str, developer_id: int):
     return get_developer_analytics(game_title, developer_id)
+
+
+@app.get("/register_gamer/")
+def register_gamer_endpoint(
+    first_name: str,
+    last_name: str,
+    email: str,
+    password: str,
+    phone: Optional[str] = None,
+    preferred_genres: Optional[str] = None,
+    preferred_difficulty: Optional[str] = None,
+    preferred_play_style: Optional[str] = None,
+    preferred_mode: Optional[str] = None,
+    available_play_time: Optional[float] = None,
+):
+    return register_gamer(
+        first_name,
+        last_name,
+        email,
+        password,
+        phone,
+        preferred_genres,
+        preferred_difficulty,
+        preferred_play_style,
+        preferred_mode,
+        available_play_time,
+    )
+
+
+@app.get("/add_game_to_library/")
+def add_game_to_library_endpoint(gamer_id: int, game_title: str):
+    return add_game_to_library(gamer_id, game_title)
+
+
+@app.get("/update_game_status/")
+def update_game_status_endpoint(
+    gamer_id: int,
+    game_title: str,
+    new_status: str,
+    hours_played: Optional[float] = None,
+):
+    return update_game_status(gamer_id, game_title, new_status, hours_played)
+
+
+@app.get("/submit_review/")
+def submit_review_endpoint(
+    gamer_id: int,
+    game_title: str,
+    rating: float,
+    review_text: Optional[str] = None,
+):
+    return submit_review(gamer_id, game_title, rating, review_text)
+
+
+@app.get("/full_gamer_onboarding/")
+def full_gamer_onboarding_endpoint(
+    first_name: str,
+    last_name: str,
+    email: str,
+    password: str,
+    phone: Optional[str] = None,
+    preferred_genres: Optional[str] = None,
+    preferred_difficulty: Optional[str] = None,
+    preferred_play_style: Optional[str] = None,
+    preferred_mode: Optional[str] = None,
+    available_play_time: Optional[float] = None,
+    owned_game_titles: Optional[str] = None,
+):
+    return full_gamer_onboarding(
+        first_name,
+        last_name,
+        email,
+        password,
+        phone,
+        preferred_genres,
+        preferred_difficulty,
+        preferred_play_style,
+        preferred_mode,
+        available_play_time,
+        owned_game_titles,
+    )

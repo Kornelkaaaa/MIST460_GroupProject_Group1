@@ -19,7 +19,7 @@
 -- DROP ORDER:    Layer 4 → Layer 3 → Layer 2 → Layer 1
 -- ============================================================
 
-USE mist460-api-group1;
+--USE mist460-api-group1;
 GO
 
 
@@ -272,7 +272,7 @@ BEGIN
     FROM Library l
         JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
     WHERE l.GameID  = @GameID
-      AND ps.Status = N'Finished';
+      AND ps.Status = N'Completed';
 
     IF @Owners = 0 RETURN 0.00;
 
@@ -354,7 +354,7 @@ BEGIN
     FROM Library l
         JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
     WHERE l.GamerID = @GamerID
-      AND ps.Status = N'Finished';
+      AND ps.Status = N'Completed';
 
     RETURN ISNULL(@Count, 0);
 END;
@@ -522,7 +522,7 @@ BEGIN
             SELECT 1
             FROM deleted d
                 JOIN inserted i ON d.PlayerStatsID = i.PlayerStatsID
-            WHERE d.Status = N'Finished'
+            WHERE d.Status = N'Completed'
               AND i.Status IN (N'Not Started', N'In Progress')
         )
         BEGIN
@@ -626,10 +626,10 @@ BEGIN
         FirstName + N' ' + LastName AS Fullname
     FROM AppUser
     WHERE Email = @username
-      AND PasswordHash = CONVERT(VARBINARY(256), @password);
+      AND PasswordHash = HASHBYTES('SHA2_256', @password);
 END;
 GO
--- USAGE: EXEC procValidateUser @username='alex@email.com', @password='hash_alex';
+-- USAGE: EXEC procValidateUser @username='alex.rivera@email.com', @password='alex123';
 
 
 -- ------------------------------------------------------------
@@ -692,8 +692,8 @@ GO
 -- EXEC sp_RegisterGamer
 --     @FirstName='Alex', @LastName='Rivera',
 --     @Email='alex@email.com',
---     @PasswordHash=CONVERT(VARBINARY(256),'hash_alex'),
---     @PreferredGenres='Action, FPS', @PreferredDifficulty='Hard',
+--     @PasswordHash=HASHBYTES('SHA2_256', N'alex123'),
+--     @PreferredGenres='Action, First-Person Shooter', @PreferredDifficulty='Hard',
 --     @NewGamerID=@ID OUTPUT;
 -- SELECT @ID;
 
@@ -795,7 +795,7 @@ BEGIN
     WHERE l.GamerID = @GamerID AND l.GameID = @GameID;
 
     -- Guard: cannot roll back a Finished game
-    IF @OldStatus = N'Finished' AND @NewStatus IN (N'Not Started', N'In Progress')
+    IF @OldStatus = N'Completed' AND @NewStatus IN (N'Not Started', N'In Progress')
     BEGIN
         RAISERROR('A finished game cannot be set back to an earlier status.', 16, 1);
         RETURN;
@@ -902,34 +902,70 @@ BEGIN
 
     EXEC sp_AssertGamerExists @GamerID;
 
-    DECLARE @PreferredGenres  NVARCHAR(200);
-    DECLARE @PreferredMode    NVARCHAR(50);
+    DECLARE @PreferredGenres NVARCHAR(200);
 
-    SELECT @PreferredGenres = PreferredGenres,
-           @PreferredMode   = PreferredMode
+    SELECT @PreferredGenres = PreferredGenres
     FROM Gamer WHERE GamerID = @GamerID;
 
+    -- Normalize the gamer's preferred genres into a proper list
+    -- (split on commas, trim, drop empties) so we can match by exact
+    -- genre name instead of fragile substring LIKE.
+    DECLARE @PrefList TABLE (GenreName NVARCHAR(100) PRIMARY KEY);
+
+    IF @PreferredGenres IS NOT NULL
+    BEGIN
+        INSERT INTO @PrefList (GenreName)
+        SELECT DISTINCT LTRIM(RTRIM(value))
+        FROM STRING_SPLIT(@PreferredGenres, ',')
+        WHERE LTRIM(RTRIM(value)) <> N'';
+    END
+
+    -- Find unowned games that match at least one preferred genre.
+    -- DISTINCT on GameID prevents the GameGenre join from returning
+    -- the same game multiple times when it matches multiple genres.
+    DECLARE @Matched TABLE (GameID INT PRIMARY KEY);
+
+    INSERT INTO @Matched (GameID)
+    SELECT DISTINCT g.GameID
+    FROM Game g
+        JOIN GameGenre gg ON g.GameID    = gg.GameID
+        JOIN Genre ge     ON gg.GenreID  = ge.GenreID
+        JOIN @PrefList p  ON p.GenreName = ge.GenreName
+    WHERE dbo.fn_GamerOwnsGame(@GamerID, g.GameID) = 0;
+
+    IF EXISTS (SELECT 1 FROM @Matched)
+    BEGIN
+        SELECT TOP (@TopN)
+            g.GameID,
+            g.GameTitle,
+            g.YearReleased,
+            g.AverageRating,
+            d.StudioName,
+            dbo.fn_GetTopGenreForGame(g.GameID)      AS PrimaryGenre,
+            dbo.fn_GetGameCompletionRate(g.GameID)   AS CommunityCompletionPct,
+            'Matches your preferences'               AS RecommendationReason
+        FROM Game g
+            JOIN Developer d ON g.DeveloperID = d.DeveloperID
+            JOIN @Matched m  ON g.GameID      = m.GameID
+        ORDER BY g.AverageRating DESC;
+
+        RETURN;
+    END
+
+    -- Fallback: no genre match (or no preferences set) — return the
+    -- top-rated unowned games so the caller always gets results.
     SELECT TOP (@TopN)
         g.GameID,
         g.GameTitle,
         g.YearReleased,
         g.AverageRating,
         d.StudioName,
-        -- Layer 1 functions used as computed columns in the result
         dbo.fn_GetTopGenreForGame(g.GameID)      AS PrimaryGenre,
         dbo.fn_GetGameCompletionRate(g.GameID)   AS CommunityCompletionPct,
-        'Matches your preferences'               AS RecommendationReason
+        'Top-rated pick we think you''ll enjoy'  AS RecommendationReason
     FROM Game g
-        JOIN Developer d  ON g.DeveloperID = d.DeveloperID
-        JOIN GameGenre gg ON g.GameID      = gg.GameID
-        JOIN Genre ge     ON gg.GenreID    = ge.GenreID
-    WHERE
-        -- Use Layer 1 function to exclude owned games
-        dbo.fn_GamerOwnsGame(@GamerID, g.GameID) = 0
-        AND (
-            @PreferredGenres IS NULL
-            OR @PreferredGenres LIKE '%' + ge.GenreName + '%'
-        )
+        JOIN Developer d ON g.DeveloperID = d.DeveloperID
+    WHERE dbo.fn_GamerOwnsGame(@GamerID, g.GameID) = 0
     ORDER BY g.AverageRating DESC;
 
 END;
@@ -986,8 +1022,7 @@ BEGIN
 END;
 GO
 -- USAGE: EXEC sp_SearchGamesByKeyword @Keyword='open world', @GamerID=1;
-
-
+--EXEC sp_GetRecommendations @GamerID = 1, @TopN = 6;
 -- ------------------------------------------------------------
 -- sp_GetDeveloperAnalytics
 -- ------------------------------------------------------------
@@ -1029,7 +1064,7 @@ BEGIN
         -- Layer 1 function for completion rate
         dbo.fn_GetGameCompletionRate(@GameID)        AS CompletionRatePct,
         COUNT(DISTINCT l.GamerID)                    AS TotalOwners,
-        SUM(CASE WHEN ps.Status = N'Finished'    THEN 1 ELSE 0 END) AS TotalFinished,
+        SUM(CASE WHEN ps.Status = N'Completed'    THEN 1 ELSE 0 END) AS TotalFinished,
         SUM(CASE WHEN ps.Status = N'In Progress' THEN 1 ELSE 0 END) AS CurrentlyPlaying,
         SUM(CASE WHEN ps.Status = N'Not Started' THEN 1 ELSE 0 END) AS NotStarted,
         AVG(ps.HoursPlayed)                          AS AvgHoursPlayed,
@@ -1161,7 +1196,7 @@ BEGIN
 
 END;
 GO
--- USAGE: EXEC sp_GetNextGameSuggestion @GamerID=1;
+-- USAGE: EXEC sp_GetNextGameSuggestion @GamerID=2;
 
 
 -- ------------------------------------------------------------
@@ -1271,7 +1306,7 @@ GO
 -- EXEC sp_FullGamerOnboarding
 --     @FirstName='Sam', @LastName='Lee',
 --     @Email='sam.lee@email.com',
---     @PasswordHash=CONVERT(VARBINARY(256),'hash_sam'),
+--     @PasswordHash=HASHBYTES('SHA2_256', N'sam_password'),
 --     @PreferredGenres='Action, RPG', @PreferredDifficulty='Hard',
 --     @PreferredMode='Single-Player', @AvailablePlayTime=20.0;
 --
@@ -1279,7 +1314,7 @@ GO
 -- EXEC sp_FullGamerOnboarding
 --     @FirstName='Sam', @LastName='Lee',
 --     @Email='sam2@email.com',
---     @PasswordHash=CONVERT(VARBINARY(256),'hash_sam2'),
+--     @PasswordHash=HASHBYTES('SHA2_256', N'sam2_password'),
 --     @PreferredGenres='Action',
 --     @OwnedGameTitles='Diablo IV|Far Cry 6|Battlefield 2042';
 

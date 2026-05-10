@@ -1,13 +1,9 @@
 import pymssql
 
 from get_db_connection import get_db_connection
-from mock_data import NEXT_GAME_SUGGESTION, is_mock_mode
 
 
 def get_next_game_suggestion(gamer_id: int):
-    if is_mock_mode():
-        return {"data": NEXT_GAME_SUGGESTION}
-
     conn = get_db_connection()
     cursor = conn.cursor(as_dict=True)
     cursor.execute("EXEC sp_GetNextGameSuggestion %d", (gamer_id,))
