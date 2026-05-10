@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Any, Optional
 
 import pymssql
 
 from get_db_connection import get_db_connection
+
+
+def _to_float(v: Any) -> Optional[float]:
+    return float(v) if v is not None else None
 
 
 def search_games_by_keyword(keyword: str, gamer_id: Optional[int] = None, top_n: int = 10):
@@ -26,10 +30,10 @@ def search_games_by_keyword(keyword: str, gamer_id: Optional[int] = None, top_n:
             "GameTitle": row["GameTitle"],
             "GameDescription": row["GameDescription"],
             "YearReleased": row["YearReleased"],
-            "AverageRating": float(row["AverageRating"]) if row["AverageRating"] is not None else None,
+            "AverageRating": _to_float(row["AverageRating"]),
             "StudioName": row["StudioName"],
             "PrimaryGenre": row["PrimaryGenre"],
-            "CompletionRatePct": float(row["CompletionRatePct"]) if row["CompletionRatePct"] is not None else None,
+            "CompletionRatePct": _to_float(row["CompletionRatePct"]),
             "AlreadyOwned": row["AlreadyOwned"],
         }
         for row in rows

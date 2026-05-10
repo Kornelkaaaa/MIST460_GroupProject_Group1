@@ -1,6 +1,12 @@
+from typing import Any, Optional
+
 import pymssql
 
 from get_db_connection import get_db_connection
+
+
+def _to_float(v: Any) -> Optional[float]:
+    return float(v) if v is not None else None
 
 
 def get_recommendations(gamer_id: int, top_n: int = 6):
@@ -20,10 +26,10 @@ def get_recommendations(gamer_id: int, top_n: int = 6):
             "GameID": row["GameID"],
             "GameTitle": row["GameTitle"],
             "YearReleased": row["YearReleased"],
-            "AverageRating": float(row["AverageRating"]) if row["AverageRating"] is not None else None,
+            "AverageRating": _to_float(row["AverageRating"]),
             "StudioName": row["StudioName"],
             "PrimaryGenre": row["PrimaryGenre"],
-            "CommunityCompletionPct": float(row["CommunityCompletionPct"]) if row["CommunityCompletionPct"] is not None else None,
+            "CommunityCompletionPct": _to_float(row["CommunityCompletionPct"]),
             "RecommendationReason": row["RecommendationReason"],
         }
         for row in rows
