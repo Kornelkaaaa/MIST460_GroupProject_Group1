@@ -18,10 +18,9 @@
 -- CREATE ORDER:  Layer 1 → Layer 2 → Layer 3 → Layer 4
 -- DROP ORDER:    Layer 4 → Layer 3 → Layer 2 → Layer 1
 -- ============================================================
-
+GRANT SELECT, INSERT, DELETE ON dbo.Chunks TO APIUser;
 --USE mist460-api-group1;
-GO
-
+--GO
 
 
 -- Layer 4: High-level orchestration procedures (call other procedures)
@@ -41,11 +40,15 @@ IF OBJECT_ID('sp_UpdateReview')             IS NOT NULL DROP PROCEDURE sp_Update
 IF OBJECT_ID('sp_DeleteReview')             IS NOT NULL DROP PROCEDURE sp_DeleteReview;
 IF OBJECT_ID('sp_UpdateGamerProfile')       IS NOT NULL DROP PROCEDURE sp_UpdateGamerProfile;
 IF OBJECT_ID('sp_GetRecommendations')       IS NOT NULL DROP PROCEDURE sp_GetRecommendations;
+IF OBJECT_ID('sp_GetEmbeddingRecommendations') IS NOT NULL DROP PROCEDURE sp_GetEmbeddingRecommendations;
 IF OBJECT_ID('sp_SearchGamesByKeyword')     IS NOT NULL DROP PROCEDURE sp_SearchGamesByKeyword;
 -- Guard procedures (called by other Layer 3 procs)
 IF OBJECT_ID('sp_AssertGamerExists')        IS NOT NULL DROP PROCEDURE sp_AssertGamerExists;
 IF OBJECT_ID('sp_ResolveGameID')            IS NOT NULL DROP PROCEDURE sp_ResolveGameID;
 GO
+
+-- Chunking procedure 
+IF OBJECT_ID('procInsertChunk') IS NOT NULL DROP PROCEDURE procInsertChunk;
 
 -- Layer 2: Triggers (call Layer 1 functions)
 IF OBJECT_ID('trg_GamerReview_RecalcRating')        IS NOT NULL DROP TRIGGER trg_GamerReview_RecalcRating;
@@ -66,6 +69,7 @@ IF OBJECT_ID('fn_GamerAlreadyReviewed')     IS NOT NULL DROP FUNCTION fn_GamerAl
 IF OBJECT_ID('fn_GamerExists')              IS NOT NULL DROP FUNCTION fn_GamerExists;
 IF OBJECT_ID('fn_GameExists')               IS NOT NULL DROP FUNCTION fn_GameExists;
 IF OBJECT_ID('fn_GetGameIDByTitle')         IS NOT NULL DROP FUNCTION fn_GetGameIDByTitle;
+IF OBJECT_ID('fnGetGameRecommendationsByReview') IS NOT NULL DROP FUNCTION fnGetGameRecommendationsByReview;
 GO
 
 
@@ -167,6 +171,20 @@ GO
 -- USAGE: SELECT dbo.fn_GetGameIDByTitle('Diablo IV');         -- returns 2
 -- USAGE: SELECT dbo.fn_GetGameIDByTitle('Made-up Game');      -- returns NULL
 -- USAGE: SELECT dbo.fn_GetGameIDByTitle('Duplicate Title');   -- returns -1
+
+-- procInsertChunk
+create or alter procedure procInsertChunk
+(
+    @GameChunk NVARCHAR(MAX),
+    @ChunkEmbedding VECTOR(1536),
+    @GameID INT
+)
+AS
+BEGIN
+    INSERT INTO Chunks (GameChunk, ChunkEmbedding, GameID)
+    VALUES (@GameChunk, @ChunkEmbedding, @GameID);
+END;
+GO
 
 
 -- ------------------------------------------------------------
@@ -411,6 +429,46 @@ RETURN
 GO
 -- USAGE: SELECT * FROM dbo.fn_GetGamerLibrary(1);
 -- USAGE: SELECT * FROM dbo.fn_GetGamerLibrary(1) WHERE Status = 'Finished';
+
+
+-- ------------------------------------------------------------
+-- fnGetGameRecommendationsByReview  (Table-Valued, multistatement)
+-- ------------------------------------------------------------
+-- PURPOSE: Given an input embedding (typically the embedding of a
+--   game/review/profile text the gamer is interested in), return up
+--   to 5 games whose review chunks are most similar by cosine
+--   distance. One row per game, with the best-matching chunk as
+--   evidence and that chunk's distance.
+--
+-- REQUIRES: dbo.Chunks(ChunkID, GameChunk, ChunkEmbedding VECTOR(1536), GameID)
+--   populated with reviews chunked + embedded by the API ingestion job.
+-- ------------------------------------------------------------
+CREATE FUNCTION fnGetGameRecommendationsByReview
+(
+    @QueryEmbedding VECTOR(1536)
+)
+RETURNS @RecommendedGames TABLE
+(
+    GameID   INT,
+    Evidence NVARCHAR(MAX),
+    Distance FLOAT
+)
+AS
+BEGIN
+    INSERT INTO @RecommendedGames (GameID, Evidence, Distance)
+    SELECT TOP 5
+        GameID,
+        MIN(GameChunk) AS Evidence,
+        MIN(Vector_Distance('cosine', @QueryEmbedding, ChunkEmbedding)) AS Distance
+    FROM Chunks
+    GROUP BY GameID
+    HAVING MIN(Vector_Distance('cosine', @QueryEmbedding, ChunkEmbedding)) <= 0.6
+    ORDER BY Distance ASC;
+
+    RETURN;
+END;
+GO
+-- USAGE: SELECT * FROM dbo.fnGetGameRecommendationsByReview(@vec);
 
 
 -- ============================================================
@@ -1185,6 +1243,47 @@ BEGIN
 END;
 GO
 -- USAGE: EXEC sp_GetDeveloperAnalytics @GameTitle='Echoes of Aether', @DeveloperID=6;
+
+
+-- ------------------------------------------------------------
+-- sp_GetEmbeddingRecommendations
+-- ------------------------------------------------------------
+-- CALLS:  fnGetGameRecommendationsByReview (Layer 1)
+--
+-- PURPOSE: Vector-search recommendations driven by review +
+--   description embeddings in the Chunks table. The caller
+--   embeds a free-text query into a 1536-dim VECTOR and passes
+--   it in. We hand off to the TVF, enrich with Game/Developer
+--   info, and (optionally) exclude games the gamer already owns.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_GetEmbeddingRecommendations
+    @QueryEmbedding VECTOR(1536),
+    @GamerID        INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT
+        g.GameID,
+        g.GameTitle,
+        g.YearReleased,
+        g.AverageRating,
+        d.StudioName,
+        r.Evidence,
+        CAST(r.Distance AS DECIMAL(6,4)) AS Distance
+    FROM dbo.fnGetGameRecommendationsByReview(@QueryEmbedding) r
+        JOIN Game g      ON g.GameID      = r.GameID
+        JOIN Developer d ON g.DeveloperID = d.DeveloperID
+    WHERE @GamerID IS NULL
+       OR NOT EXISTS (
+           SELECT 1 FROM Library l
+           WHERE l.GamerID = @GamerID AND l.GameID = g.GameID
+       )
+    ORDER BY r.Distance ASC;
+END;
+GO
+-- USAGE: DECLARE @v VECTOR(1536) = '[0.1, 0.2, ...]';
+--        EXEC sp_GetEmbeddingRecommendations @QueryEmbedding=@v, @GamerID=1;
 
 
 -- ------------------------------------------------------------

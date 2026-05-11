@@ -20,6 +20,7 @@ from update_review import update_review
 from delete_review import delete_review
 from update_gamer_profile import update_gamer_profile
 from get_gamer_profile import get_gamer_profile
+from get_embedding_recommendations import get_embedding_recommendations
 
 
 app = FastAPI()
@@ -92,6 +93,15 @@ def delete_review_endpoint(gamer_id: int, game_title: str):
 @app.get("/get_gamer_profile/")
 def get_gamer_profile_endpoint(gamer_id: int):
     return get_gamer_profile(gamer_id)
+
+
+@app.get("/get_embedding_recommendations/")
+def get_embedding_recommendations_endpoint(
+    query: str,
+    gamer_id: Optional[int] = None,
+    include_advisor: bool = True,
+):
+    return get_embedding_recommendations(query, gamer_id, include_advisor)
 
 
 @app.get("/update_gamer_profile/")

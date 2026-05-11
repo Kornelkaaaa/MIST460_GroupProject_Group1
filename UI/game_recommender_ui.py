@@ -13,6 +13,7 @@ from get_gamer_library_ui import get_gamer_library_ui
 from remove_game_from_library_ui import remove_game_from_library_ui
 from manage_reviews_ui import manage_reviews_ui
 from update_gamer_profile_ui import update_gamer_profile_ui
+from embedding_recommendations_ui import embedding_recommendations_ui
 
 
 st.set_page_config(page_title="Game Recommender", layout="wide")
@@ -50,6 +51,7 @@ GAMER_PAGES = {
     "Sign Up": full_gamer_onboarding_ui,
     "My Library & Stats": get_gamer_library_ui,
     "Get Game Recommendations": get_recommendations_ui,
+    "AI Recommendations (Embeddings)": embedding_recommendations_ui,
     "Search Games by Keyword": search_games_ui,
     "What Should I Play Next?": get_next_game_suggestion_ui,
     "Add Game to Library": add_game_to_library_ui,

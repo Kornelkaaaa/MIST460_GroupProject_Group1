@@ -1,7 +1,18 @@
 --USE mist460-api-group1;
 GO
-
-
+/*
+SELECT name, type_desc                                                     
+  FROM sys.database_principals                                               
+  WHERE type IN ('S', 'U')      -- SQL users + Windows users
+    AND name NOT IN ('dbo', 'guest', 'INFORMATION_SCHEMA', 'sys',
+                     'public', 'db_owner', 'db_accessadmin',
+                     'db_backupoperator', 'db_datareader', 'db_datawriter',
+                     'db_ddladmin', 'db_denydatareader', 'db_denydatawriter',
+                     'db_owner', 'db_securityadmin');
+*/
+-- Drop order matters: child tables (FK referencing) must be dropped
+-- before their parents. Chunks FK-references Game, so it goes first.
+IF OBJECT_ID('Chunks')          IS NOT NULL DROP TABLE Chunks;
 IF OBJECT_ID('GameGenre')       IS NOT NULL DROP TABLE GameGenre;
 IF OBJECT_ID('PlayerStats')     IS NOT NULL DROP TABLE PlayerStats;
 IF OBJECT_ID('GamerReview')     IS NOT NULL DROP TABLE GamerReview;
@@ -134,6 +145,22 @@ CREATE TABLE Library (
 );
 GO
 
+CREATE TABLE Chunks (
+    ChunkID INT IDENTITY(1,1) CONSTRAINT PK_Chunks PRIMARY KEY,
+    GameChunk NVARCHAR(MAX) NOT NULL,
+    ChunkEmbedding VECTOR(1536) NOT NULL,
+    GameID INT NOT NULL
+        CONSTRAINT FK_Chunks_Game FOREIGN KEY (GameID) REFERENCES Game(GameID)
+);
+GO
+
+-- Grant the API runtime account read + write access to Chunks
+-- (read for vector search at runtime, write for the ingestion script).
+-- The IF EXISTS guard lets this script run cleanly even when the
+-- expected login hasn't been created or has a different name.
+IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'APILogin')
+    GRANT SELECT, INSERT, DELETE ON dbo.Chunks TO APILogin;
+GO
 -- ============================================================
 -- PlayerStats (tracks a Gamer's stats for a specific Game,
 --              linked through their Library  0..* per Library)

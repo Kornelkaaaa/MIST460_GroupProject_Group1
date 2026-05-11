@@ -66,15 +66,15 @@ GO
 
 INSERT INTO Game (DeveloperID, GameTitle, GameDescription, YearReleased, AverageRating)
 VALUES
-(6, N'Call of Duty: Modern Warfare III',  N'Tactical FPS with iconic multiplayer modes and a gripping campaign.',              2023, 3.90),
-(6, N'Diablo IV',                         N'Dark action RPG set in the world of Sanctuary with deep loot and build systems.',  2023, 4.20),
-(6, N'World of Warcraft: The War Within', N'Massively multiplayer online RPG set in the iconic Warcraft universe.',            2024, 4.10),
-(7, N'EA Sports FC 25',                   N'The most realistic football simulation with updated rosters and gameplay.',        2024, 3.80),
-(7, N'Battlefield 2042',                  N'Large-scale multiplayer FPS featuring futuristic warfare and 128-player lobbies.', 2021, 3.20),
-(7, N'The Sims 4',                        N'Life simulation game where players create and control people in a virtual world.', 2014, 4.00),
-(8, N'Assassin''s Creed Mirage',          N'Action-adventure game returning to the roots of stealth in 9th-century Baghdad.', 2023, 4.10),
-(8, N'Far Cry 6',                         N'Open world FPS set on a fictional Caribbean island under a ruthless dictator.',    2021, 3.70),
-(8, N'Rainbow Six Siege',                 N'Tactical 5v5 FPS built around destructible environments and operator abilities.', 2015, 4.40);
+(6, N'Call of Duty: Modern Warfare III',  N'Fast-paced tactical first-person shooter with iconic multiplayer modes, breathtaking large-scale maps, and a gripping single-player campaign that revives classic locales. Squad-based combat, killstreaks, and the open-combat Zombies mode keep every match feeling different, while cross-progression with previous COD titles preserves your unlocks and operators.', 2023, 3.90),
+(6, N'Diablo IV',                         N'Dark action RPG set in the gothic world of Sanctuary. Crawl through massive open-world dungeons, hunt unique loot, and master five distinct classes with deep skill trees. Seasonal content keeps endgame fresh for hundreds of hours, while couch co-op and ruthless PvP zones add a social layer.', 2023, 4.20),
+(6, N'World of Warcraft: The War Within', N'Massively multiplayer online RPG set in the iconic Warcraft universe. The newest expansion takes the Alliance and Horde deep underground to confront an ancient enemy, with new classes, dungeons, and a hero talent system that redefines how every spec plays. Two decades of social bonds keep guilds alive.', 2024, 4.10),
+(7, N'EA Sports FC 25',                   N'The most realistic football simulation on the market, with updated rosters, refined player physics, and Ultimate Team''s deepest economy yet. Career mode now supports women''s leagues and you can build a club from scratch. PlayStyles give every superstar a signature feel on the pitch.', 2024, 3.80),
+(7, N'Battlefield 2042',                  N'Large-scale multiplayer first-person shooter featuring near-future warfare on 128-player maps. Dynamic weather, destructible buildings, and the Specialist system change every match. Portal mode lets you blend gear and maps from across the Battlefield series; the game has improved substantially since a rough launch.', 2021, 3.20),
+(7, N'The Sims 4',                        N'Life simulation where you create unique people, build dream homes, and shape every aspect of their lives. Expansion packs add cities, careers, dynamic weather, and supernatural twists. Cross-pack interactions mean a vampire chef can run a haunted bakery in a snowy mountain town.', 2014, 4.00),
+(8, N'Assassin''s Creed Mirage',          N'Action-adventure game returning to the roots of stealth in 9th-century Baghdad. Play as Basim, a thief turned Hidden One, as you climb minarets, infiltrate palaces, and weave through bustling souks. A tight 15-hour story without RPG bloat — the way classic Assassin''s Creed felt.', 2023, 4.10),
+(8, N'Far Cry 6',                         N'Open-world first-person shooter set on the fictional Caribbean island of Yara under a ruthless dictator. Build improvised "Resolver" weapons, recruit guerrilla allies, and topple a regime one outpost at a time. Lush jungles, dense cities, and a charismatic villain played by Giancarlo Esposito.', 2021, 3.70),
+(8, N'Rainbow Six Siege',                 N'Tactical 5v5 first-person shooter built around destructible environments and asymmetric operator abilities. Attackers breach, defenders fortify — every match becomes a puzzle of information warfare and clutch micro-decisions. A decade of seasonal content keeps the meta evolving.', 2015, 4.40);
 GO
 
 -- ============================================================
@@ -141,15 +141,15 @@ GO
 
 INSERT INTO GamerReview (GamerID, GameID, ReviewText, Rating, ReviewDate)
 VALUES
-(1, 1, N'MW3 multiplayer is as addictive as ever. Campaign felt a little short though.',              3.8, '2023-12-15'),
-(1, 9, N'Rainbow Six Siege has the best tactical FPS gameplay out there. Still going strong.',        4.9, '2023-01-20'),
-(2, 4, N'FC 25 feels smoother than ever. Ultimate Team is still a money pit though.',                 3.7, '2024-10-10'),
-(2, 1, N'Fun with friends in Warzone but the base multiplayer maps are hit or miss.',                 3.5, '2024-01-05'),
-(3, 2, N'Diablo IV is absolutely massive. The endgame keeps me hooked for hundreds of hours.',        4.5, '2023-09-01'),
-(3, 7, N'AC Mirage brings back the classic stealth feel. Short but very well crafted.',               4.2, '2023-11-22'),
-(4, 7, N'Loved the setting and story. Wish it were a bit longer but very enjoyable.',                 4.0, '2023-12-01'),
-(4, 8, N'Far Cry 6 looks gorgeous but the story does not live up to the hype.',                      3.3, '2022-02-14'),
-(5, 5, N'Battlefield 2042 had a rough launch but it has improved a lot with patches.',                3.5, '2022-06-30');
+(1, 1, N'MW3 multiplayer is as addictive as ever. The maps lean on classic remakes which I love. Campaign felt a little short though — maybe six hours — and Zombies has my squad still hooked. Tactical FPS at its best when you have a coordinated party.', 3.8, '2023-12-15'),
+(1, 9, N'Rainbow Six Siege still has the best tactical FPS gameplay out there. Ten years in and the operator rotation keeps it fresh. Steep learning curve, but unbeatable once you settle in. Every round is an information-warfare puzzle.', 4.9, '2023-01-20'),
+(2, 4, N'FC 25 feels smoother than ever. PlayStyles give superstars a real signature feel and women''s leagues finally get the spotlight they deserve. Ultimate Team is still a money pit though — microtransactions are out of control.', 3.7, '2024-10-10'),
+(2, 1, N'Fun with friends in Warzone but the base multiplayer maps are hit or miss. Skill-based matchmaking is too aggressive — every match feels like a tryhard sweat-fest. Still, the gunplay is some of the best in the series.', 3.5, '2024-01-05'),
+(3, 2, N'Diablo IV is absolutely massive. The endgame seasons keep me hooked for hundreds of hours and the combat feel is the best in the series. Cosmetics-over-loot economy was a misstep at launch but they''ve patched a lot of it.', 4.5, '2023-09-01'),
+(3, 7, N'AC Mirage brings back the classic stealth feel. No bloated RPG menus, just clean stealth gameplay in a beautifully realized 9th-century Baghdad. Short but very well crafted — about 15 hours and every minute earned.', 4.2, '2023-11-22'),
+(4, 7, N'Loved the setting and the story. The bird companion is back, parkour is tighter than recent entries, and the souks of Baghdad feel alive. Wish it were a bit longer but very enjoyable for what it is.', 4.0, '2023-12-01'),
+(4, 8, N'Far Cry 6 looks gorgeous and Giancarlo Esposito''s performance as the dictator is excellent. But the open world feels checklist-y and the story does not live up to the hype the marketing built.', 3.3, '2022-02-14'),
+(5, 5, N'Battlefield 2042 had a rough launch but it has improved a lot with patches. Specialists are still controversial and divide the community. Portal mode is the real gem here — mixing maps and weapons across eras is wonderful.', 3.5, '2022-06-30');
 GO
 
 -- ============================================================
@@ -175,14 +175,14 @@ GO
 -- Mario games (DeveloperID 9 = Nintendo)
 INSERT INTO Game (DeveloperID, GameTitle, GameDescription, YearReleased, AverageRating)
 VALUES
-(9, N'Super Mario Odyssey',              N'Globe-trotting 3D platformer where Mario teams up with Cappy to rescue Princess Peach from Bowser.',          2017, 4.80),
-(9, N'Super Mario Bros. Wonder',         N'Side-scrolling platformer with Wonder Flowers that twist levels in unpredictable, magical ways.',              2023, 4.70),
-(9, N'Super Mario Galaxy',               N'3D platformer set across spherical galaxies with gravity-bending level design.',                                2007, 4.90),
-(9, N'Super Mario 64',                   N'The original 3D Mario adventure through the paintings of Princess Peach''s castle.',                            1996, 4.60),
-(9, N'Mario Kart 8 Deluxe',              N'Definitive kart racer featuring every track and character from the Wii U original plus Booster Course Pass.',   2017, 4.80),
-(9, N'Paper Mario: The Thousand-Year Door', N'Turn-based RPG remake following Mario''s paper-thin adventure to find the seven Crystal Stars.',              2024, 4.50),
-(9, N'Super Mario Sunshine',             N'Tropical 3D platformer where Mario uses the FLUDD water pack to clean up Isle Delfino.',                       2002, 4.20),
-(9, N'New Super Mario Bros. U Deluxe',   N'Classic 2D side-scrolling Mario action with up to four-player co-op across the Mushroom Kingdom.',             2019, 4.30);
+(9, N'Super Mario Odyssey',              N'Globe-trotting 3D platformer where Mario teams up with the sentient hat Cappy to chase Bowser across stylized "kingdoms" inspired by real-world locales. The capture mechanic lets you possess hundreds of creatures and objects to solve clever traversal puzzles. Joyful, generous, and packed with hidden Power Moons that reward exploration.', 2017, 4.80),
+(9, N'Super Mario Bros. Wonder',         N'Side-scrolling platformer that breaks decades of Mario tradition with Wonder Flowers — magical seeds that warp the level in unpredictable, hilarious ways. Polished controls, a charming new soundtrack, and a roster of nine playable characters make co-op chaotic and inclusive for all skill levels.', 2023, 4.70),
+(9, N'Super Mario Galaxy',               N'3D platformer set across spherical mini-worlds with gravity-bending level design. Mario hops between tiny planets, each a self-contained puzzle box of orbital physics. The lush orchestral score still defines the series and the level design is a masterclass in playful 3D experimentation.', 2007, 4.90),
+(9, N'Super Mario 64',                   N'The original 3D Mario adventure through the magical paintings of Princess Peach''s castle. Free-roaming stars, triple jumps, wall kicks — every move Mario has done since traces back to this game. Still tight, still magical, still surprising thirty years later.', 1996, 4.60),
+(9, N'Mario Kart 8 Deluxe',              N'Definitive kart racer featuring every track and character from the Wii U original plus the Booster Course Pass DLC. Antigravity sections, vibrant courses, and forgiving drift mechanics make it the family party game of the decade. Online play scales smoothly from one to eight players.', 2017, 4.80),
+(9, N'Paper Mario: The Thousand-Year Door', N'Turn-based RPG remake following Mario''s paper-thin adventure to find the seven Crystal Stars. Audience-pleasing action commands, hilarious party members like Vivian and Bobbery, and a story that beats most full-length JRPGs. The art style is gorgeous in HD and the writing is sharp.', 2024, 4.50),
+(9, N'Super Mario Sunshine',             N'Tropical 3D platformer where Mario uses the FLUDD water pack to clean up paint-graffiti''d Isle Delfino. Loose physics, hover and rocket nozzles, and one of the most divisive level designs in the series. Ambitious in ways Nintendo rarely tries anymore — a flawed gem.', 2002, 4.20),
+(9, N'New Super Mario Bros. U Deluxe',   N'Classic 2D side-scrolling Mario action with up to four-player local co-op across the Mushroom Kingdom. Toadette and Nabbit make harder levels accessible for newcomers, while the secret world and challenge mode reward veterans. A polished entry point for any age.', 2019, 4.30);
 GO
 
 -- GameGenre mappings for Mario games (GameIDs 10-17, Platformer GenreID = 10)
@@ -199,4 +199,36 @@ VALUES
 (15, 5),   -- Paper Mario: TTYD              -> Adventure
 (16, 10),  -- Super Mario Sunshine           -> Platformer
 (17, 10);  -- New Super Mario Bros. U Deluxe -> Platformer
+GO
+
+
+-- ============================================================
+-- Extra library, stats, and reviews for the Mario titles
+-- ============================================================
+
+INSERT INTO Library (GamerID, GameID, DateAdded)
+VALUES
+(4, 10, '2024-01-15'),   -- Taylor   owns Super Mario Odyssey
+(4, 12, '2024-02-20'),   -- Taylor   owns Super Mario Galaxy
+(2, 14, '2024-05-01'),   -- Jordan   owns Mario Kart 8 Deluxe
+(5, 17, '2024-07-10'),   -- Casey    owns New Super Mario Bros. U Deluxe
+(3, 15, '2024-08-15');   -- Morgan   owns Paper Mario: The Thousand-Year Door
+GO
+
+INSERT INTO PlayerStats (LibraryID, HoursPlayed, Status)
+VALUES
+(10,  65.0, N'Completed'),     -- Taylor / Super Mario Odyssey
+(11,  30.0, N'In Progress'),   -- Taylor / Super Mario Galaxy
+(12, 120.0, N'In Progress'),   -- Jordan / Mario Kart 8 Deluxe
+(13,  25.0, N'In Progress'),   -- Casey  / New Super Mario Bros. U Deluxe
+(14,   8.0, N'In Progress');   -- Morgan / Paper Mario: TTYD
+GO
+
+INSERT INTO GamerReview (GamerID, GameID, ReviewText, Rating, ReviewDate)
+VALUES
+(4, 10, N'Super Mario Odyssey is pure joy. Every kingdom has its own identity and the capture mechanic gives traversal endless variety. New York-themed New Donk City is a love letter to Mario''s history. Easily one of the best 3D platformers ever made.', 5.0, '2024-03-20'),
+(4, 12, N'Galaxy still holds up. The orchestral score and gravity-bending planetoids are unmatched and the level design is some of Nintendo''s most inventive work. A little dated in spots but the core feel is timeless.', 4.7, '2024-04-15'),
+(2, 14, N'Mario Kart 8 Deluxe is the ultimate couch party game. Every track is iconic and the Booster Course Pass nearly doubled the content. Drifting feels great, items rebalance the field without feeling unfair, and online matches are seamless.', 4.9, '2024-08-10'),
+(5, 17, N'New Super Mario Bros. U Deluxe is approachable for beginners thanks to Toadette and Nabbit, but the harder challenges still kicked my butt. Co-op with kids was a blast — a great family-friendly entry point to platformers.', 4.4, '2024-09-05'),
+(3, 15, N'Paper Mario: The Thousand-Year Door is a turn-based RPG masterpiece. Witty writing, lovable companions, and audience commands make every battle feel like a stage performance. The HD remake is gorgeous. Best Mario RPG hands down.', 4.8, '2024-10-25');
 GO
