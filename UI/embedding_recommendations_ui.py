@@ -28,16 +28,20 @@ def embedding_recommendations_ui():
     if gamer_id is not None:
         st.caption(f"Filtering out games already in Gamer {gamer_id}'s library.")
 
-    # Seed the textarea from session_state so suggestion clicks can pre-fill it.
-    if "embedding_query" not in st.session_state:
-        st.session_state.embedding_query = ""
+    # Streamlit widgets with `key=` are bound to that exact session_state
+    # slot. To pre-fill the textarea from a suggestion click we must write
+    # directly to the widget's key BEFORE the widget renders. So we
+    # initialize the slot once, then both the buttons and the textarea
+    # share `embedding_query_input` as the single source of truth.
+    if "embedding_query_input" not in st.session_state:
+        st.session_state.embedding_query_input = ""
 
     st.subheader("Try one of these")
     cols = st.columns(2)
     for i, suggestion in enumerate(SUGGESTIONS):
         target_col = cols[i % 2]
         if target_col.button(suggestion, key=f"sug_{i}", use_container_width=True):
-            st.session_state.embedding_query = suggestion
+            st.session_state.embedding_query_input = suggestion
             st.rerun()
 
     with st.expander("More ideas (copy-paste)"):
@@ -50,9 +54,10 @@ def embedding_recommendations_ui():
             "**Tip:** more adjectives = better matches. Embeddings reward specificity."
         )
 
+    # No `value=` — the widget reads/writes its own key directly. The
+    # button handler above writes to the same key to pre-fill it.
     query = st.text_area(
         "What kind of game are you in the mood for?",
-        value=st.session_state.embedding_query,
         placeholder="e.g. open-world fantasy with deep crafting and a dark story",
         height=100,
         key="embedding_query_input",

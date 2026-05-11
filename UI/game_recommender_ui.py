@@ -1,10 +1,9 @@
 import streamlit as st
 
+from welcome_ui import welcome_ui
 from validate_user_ui import validate_user_ui
 from full_gamer_onboarding_ui import full_gamer_onboarding_ui
-from get_recommendations_ui import get_recommendations_ui
 from search_games_ui import search_games_ui
-from get_next_game_suggestion_ui import get_next_game_suggestion_ui
 from add_game_to_library_ui import add_game_to_library_ui
 from update_game_status_ui import update_game_status_ui
 from submit_review_ui import submit_review_ui
@@ -16,63 +15,84 @@ from update_gamer_profile_ui import update_gamer_profile_ui
 from embedding_recommendations_ui import embedding_recommendations_ui
 
 
-st.set_page_config(page_title="Game Recommender", layout="wide")
-st.title("MIST 460 — Game Recommender (Group 1)")
+st.set_page_config(page_title="Game Recommender", layout="wide", page_icon="🎮")
 
-if "app_user_id" not in st.session_state:
-    st.session_state.app_user_id = None
-if "app_user_name" not in st.session_state:
-    st.session_state.app_user_name = None
+# ──────────────── Session bootstrap ────────────────
+
+for key in ("app_user_id", "app_user_name", "app_user_role"):
+    if key not in st.session_state:
+        st.session_state[key] = None
 
 
-# ─────────── Sidebar: login status + logout ───────────
+# ──────────────── Page registry ────────────────
+# Pages are organised into sections for visual grouping in the sidebar.
+# Each entry is "Section · Page" so users can scan the dropdown
+# quickly. The list-of-tuples format keeps insertion order.
+
+GAMER_PAGES = [
+    ("🏠 Home",      "Welcome",                    welcome_ui),
+    ("🔑 Account",   "Log in / Validate",          validate_user_ui),
+    ("🔑 Account",   "Sign up",                    full_gamer_onboarding_ui),
+    ("🔑 Account",   "Edit my profile",            update_gamer_profile_ui),
+    ("📚 Library",   "My library & stats",         get_gamer_library_ui),
+    ("📚 Library",   "Add a game",                 add_game_to_library_ui),
+    ("📚 Library",   "Remove a game",              remove_game_from_library_ui),
+    ("📚 Library",   "Update game status",         update_game_status_ui),
+    ("✨ Discover",  "🤖 AI recommendations",      embedding_recommendations_ui),
+    ("✨ Discover",  "Search by keyword",          search_games_ui),
+    ("⭐ Reviews",   "Submit a review",            submit_review_ui),
+    ("⭐ Reviews",   "Edit or delete a review",    manage_reviews_ui),
+]
+
+DEVELOPER_PAGES = [
+    ("🏠 Home",      "Welcome",                    welcome_ui),
+    ("🔑 Account",   "Log in / Validate",          validate_user_ui),
+    ("📊 Studio",    "Developer analytics",        get_developer_analytics_ui),
+]
+
+
+role = st.session_state.app_user_role
+PAGES = DEVELOPER_PAGES if role == "Developer" else GAMER_PAGES
+
+label_to_handler = {f"{section}  ·  {name}": fn for section, name, fn in PAGES}
+
+
+# ──────────────── Sidebar ────────────────
 
 with st.sidebar:
-    st.subheader("Account")
+    st.markdown("## 🎮 Game Recommender")
+
     if st.session_state.app_user_id:
-        st.write(
-            f"Logged in as **{st.session_state.app_user_name or '?'}**  \n"
-            f"AppUserID: `{st.session_state.app_user_id}`"
+        st.markdown(
+            f"**{st.session_state.app_user_name or '?'}**  \n"
+            f"`{st.session_state.app_user_role or 'Gamer'}`  ·  ID `{st.session_state.app_user_id}`"
         )
-        if st.button("Log out"):
+        if st.button("Log out", use_container_width=True):
             st.session_state.app_user_id = None
             st.session_state.app_user_name = None
+            st.session_state.app_user_role = None
             st.rerun()
     else:
         st.info("Not logged in")
 
     st.divider()
 
+    choice = st.selectbox(
+        "Navigate",
+        list(label_to_handler.keys()),
+    )
 
-# ─────────── Sidebar: page selector ───────────
 
-GAMER_PAGES = {
-    "Validate User Credentials": validate_user_ui,
-    "Sign Up": full_gamer_onboarding_ui,
-    "My Library & Stats": get_gamer_library_ui,
-    "Get Game Recommendations": get_recommendations_ui,
-    "AI Recommendations (Embeddings)": embedding_recommendations_ui,
-    "Search Games by Keyword": search_games_ui,
-    "What Should I Play Next?": get_next_game_suggestion_ui,
-    "Add Game to Library": add_game_to_library_ui,
-    "Remove Game from Library": remove_game_from_library_ui,
-    "Update Game Status": update_game_status_ui,
-    "Submit a Review": submit_review_ui,
-    "Edit / Delete Review": manage_reviews_ui,
-    "Edit My Profile": update_gamer_profile_ui,
-}
+# ──────────────── Top banner + page render ────────────────
 
-DEVELOPER_PAGES = {
-    "Validate User Credentials": validate_user_ui,
-    "Developer Analytics": get_developer_analytics_ui,
-}
+# Friendly heads-up when a guest lands on a feature that needs login.
+if (
+    not st.session_state.app_user_id
+    and choice not in ("🏠 Home  ·  Welcome", "🔑 Account  ·  Log in / Validate", "🔑 Account  ·  Sign up")
+):
+    st.warning(
+        "You're not signed in. Open **🔑 Account → Log in / Validate** "
+        "in the sidebar to access personalized features."
+    )
 
-role = st.session_state.get("app_user_role")
-if role == "Developer":
-    pages = DEVELOPER_PAGES
-else:
-    # Gamers and not-logged-in users see the gamer menu.
-    pages = GAMER_PAGES
-
-choice = st.sidebar.selectbox("Choose a feature", list(pages.keys()))
-pages[choice]()
+label_to_handler[choice]()
