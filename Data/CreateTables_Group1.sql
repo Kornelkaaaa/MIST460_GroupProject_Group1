@@ -145,16 +145,16 @@ CREATE TABLE PlayerStats (
     LibraryID       INT NOT NULL
         CONSTRAINT FK_PlayerStats_Library FOREIGN KEY (LibraryID)
             REFERENCES Library(LibraryID) ON DELETE CASCADE,
-    GameID          INT NOT NULL
-        CONSTRAINT FK_PlayerStats_Game FOREIGN KEY (GameID)
-            REFERENCES Game(GameID) ON DELETE NO ACTION,
+    -- GameID intentionally removed: it was redundant with Library.GameID
+    -- and every INSERT had to remember to populate it. Reach the game via
+    -- the LibraryID join when needed.
     HoursPlayed     DECIMAL(8,2) NOT NULL
         CONSTRAINT DF_PlayerStats_Hours DEFAULT (0.0)
         CONSTRAINT CK_PlayerStats_Hours CHECK (HoursPlayed >= 0),
     Status          NVARCHAR(30) NOT NULL
         CONSTRAINT DF_PlayerStats_Status DEFAULT (N'Not Started')
         CONSTRAINT CK_PlayerStats_Status CHECK (Status IN (N'Not Started', N'In Progress', N'Completed', N'Abandoned')),
-    CONSTRAINT UK_PlayerStats_LibraryGame UNIQUE (LibraryID, GameID)
+    CONSTRAINT UK_PlayerStats_Library UNIQUE (LibraryID)   -- one stats row per Library entry
 );
 GO
 

@@ -122,17 +122,17 @@ GO
 -- PlayerStats (9 rows - one per Library entry)
 -- ============================================================
 
-INSERT INTO PlayerStats (LibraryID, GameID, HoursPlayed, Status)
+INSERT INTO PlayerStats (LibraryID, HoursPlayed, Status)
 VALUES
-(1, 1, 210.0, N'In Progress'),   -- Alex / CoD: MW3
-(2, 9, 340.0, N'Completed'),     -- Alex / Rainbow Six Siege
-(3, 4,  55.0, N'In Progress'),   -- Jordan / EA Sports FC 25
-(4, 1,  80.0, N'Completed'),     -- Jordan / CoD: MW3
-(5, 2, 125.0, N'In Progress'),   -- Morgan / Diablo IV
-(6, 7,  40.0, N'Completed'),     -- Morgan / AC Mirage
-(7, 7,  38.0, N'In Progress'),   -- Taylor / AC Mirage
-(8, 8,  22.0, N'Abandoned'),     -- Taylor / Far Cry 6
-(9, 5,  15.0, N'In Progress');   -- Casey / Battlefield 2042
+(1, 210.0, N'In Progress'),   -- Alex / CoD: MW3
+(2, 340.0, N'Completed'),     -- Alex / Rainbow Six Siege
+(3,  55.0, N'In Progress'),   -- Jordan / EA Sports FC 25
+(4,  80.0, N'Completed'),     -- Jordan / CoD: MW3
+(5, 125.0, N'In Progress'),   -- Morgan / Diablo IV
+(6,  40.0, N'Completed'),     -- Morgan / AC Mirage
+(7,  38.0, N'In Progress'),   -- Taylor / AC Mirage
+(8,  22.0, N'Abandoned'),     -- Taylor / Far Cry 6
+(9,  15.0, N'In Progress');   -- Casey / Battlefield 2042
 GO
 
 -- ============================================================

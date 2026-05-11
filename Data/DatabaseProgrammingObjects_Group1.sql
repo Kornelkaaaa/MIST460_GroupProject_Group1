@@ -261,23 +261,23 @@ CREATE FUNCTION fn_GetGameCompletionRate (@GameID INT)
 RETURNS DECIMAL(5,2)
 AS
 BEGIN
-    DECLARE @Owners   INT;
-    DECLARE @Finished INT;
+    DECLARE @Pct DECIMAL(5,2);
 
-    SELECT @Owners = COUNT(DISTINCT l.GamerID)
+    -- Single pass: conditional COUNT(DISTINCT ...) gives "finished" count,
+    -- and COUNT(DISTINCT ...) gives "owners" count, both in one scan of
+    -- Library + PlayerStats. NULLIF avoids div-by-zero when no one owns it.
+    SELECT @Pct = CAST(
+        ISNULL(
+            100.0
+            * COUNT(DISTINCT CASE WHEN ps.Status = N'Completed' THEN l.GamerID END)
+            / NULLIF(COUNT(DISTINCT l.GamerID), 0),
+        0.0)
+    AS DECIMAL(5,2))
     FROM Library l
+        LEFT JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
     WHERE l.GameID = @GameID;
 
-    SELECT @Finished = COUNT(DISTINCT l.GamerID)
-    FROM Library l
-        JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
-    WHERE l.GameID  = @GameID
-      AND ps.Status = N'Completed';
-
-    IF @Owners = 0 RETURN 0.00;
-
-    RETURN CAST(@Finished AS DECIMAL(10,2))
-         / CAST(@Owners   AS DECIMAL(10,2)) * 100.0;
+    RETURN ISNULL(@Pct, 0.00);
 END;
 GO
 -- USAGE: SELECT dbo.fn_GetGameCompletionRate(1);
@@ -379,13 +379,15 @@ RETURNS TABLE
 AS
 RETURN
 (
+    -- PrimaryGenre is inlined via OUTER APPLY so the inline TVF can be fully
+    -- expanded by the query optimizer (scalar UDFs like fn_GetTopGenreForGame
+    -- block that inlining and force per-row evaluation).
     SELECT
         ga.GameID,
         ga.GameTitle,
         ga.YearReleased,
         ga.AverageRating,
-        -- calling another Layer 1 function from inside this function
-        dbo.fn_GetTopGenreForGame(ga.GameID)   AS PrimaryGenre,
+        ISNULL(pg.PrimaryGenre, N'Unknown') AS PrimaryGenre,
         ps.HoursPlayed,
         ps.Status,
         l.LibraryID,
@@ -393,6 +395,13 @@ RETURN
     FROM Library l
         JOIN Game ga             ON l.GameID    = ga.GameID
         LEFT JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
+        OUTER APPLY (
+            SELECT TOP 1 ge.GenreName AS PrimaryGenre
+            FROM GameGenre gg
+                JOIN Genre ge ON gg.GenreID = ge.GenreID
+            WHERE gg.GameID = ga.GameID
+            ORDER BY ge.GenreName
+        ) pg
     WHERE l.GamerID = @GamerID
 );
 GO
@@ -458,10 +467,13 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Reuse Layer 1 function instead of writing the EXISTS check again
+    -- Detect duplicates via a set-based EXISTS join rather than the
+    -- per-row fn_GamerOwnsGame UDF (which makes the optimizer evaluate
+    -- the check row-by-row).
     IF EXISTS (
-        SELECT 1 FROM inserted i
-        WHERE dbo.fn_GamerOwnsGame(i.GamerID, i.GameID) = 1
+        SELECT 1
+        FROM inserted i
+            JOIN Library l ON l.GamerID = i.GamerID AND l.GameID = i.GameID
     )
     BEGIN
         RAISERROR('This game already exists in the gamer''s library.', 16, 1);
@@ -903,72 +915,84 @@ BEGIN
 
     EXEC sp_AssertGamerExists @GamerID;
 
+    -- Parse the gamer's preferred genres once.
+    -- Skip splitting entirely when the column is null or whitespace.
     DECLARE @PreferredGenres NVARCHAR(200);
-
     SELECT @PreferredGenres = PreferredGenres
     FROM Gamer WHERE GamerID = @GamerID;
 
-    -- Normalize the gamer's preferred genres into a proper list
-    -- (split on commas, trim, drop empties) so we can match by exact
-    -- genre name instead of fragile substring LIKE.
     DECLARE @PrefList TABLE (GenreName NVARCHAR(100) PRIMARY KEY);
-
-    IF @PreferredGenres IS NOT NULL
-    BEGIN
+    IF NULLIF(LTRIM(RTRIM(@PreferredGenres)), N'') IS NOT NULL
         INSERT INTO @PrefList (GenreName)
         SELECT DISTINCT LTRIM(RTRIM(value))
         FROM STRING_SPLIT(@PreferredGenres, ',')
         WHERE LTRIM(RTRIM(value)) <> N'';
-    END
 
-    -- Find unowned games that match at least one preferred genre.
-    -- DISTINCT on GameID prevents the GameGenre join from returning
-    -- the same game multiple times when it matches multiple genres.
-    DECLARE @Matched TABLE (GameID INT PRIMARY KEY);
-
-    INSERT INTO @Matched (GameID)
-    SELECT DISTINCT g.GameID
-    FROM Game g
-        JOIN GameGenre gg ON g.GameID    = gg.GameID
-        JOIN Genre ge     ON gg.GenreID  = ge.GenreID
-        JOIN @PrefList p  ON p.GenreName = ge.GenreName
-    WHERE dbo.fn_GamerOwnsGame(@GamerID, g.GameID) = 0;
-
-    IF EXISTS (SELECT 1 FROM @Matched)
-    BEGIN
-        SELECT TOP (@TopN)
+    -- Single set-based query:
+    --   * NOT EXISTS replaces the per-row fn_GamerOwnsGame UDF call.
+    --   * CROSS APPLY / OUTER APPLY inline the work previously done by
+    --     fn_GetTopGenreForGame and fn_GetGameCompletionRate, so the optimizer
+    --     can plan one execution instead of N procedural calls.
+    --   * MatchesPrefs ranks genre-matched games first and fallback to top-rated
+    --     when none match — eliminating the two-phase IF EXISTS / RETURN pattern.
+    --   * GameID is the tie-breaker so ties produce deterministic ordering.
+    WITH Candidate AS (
+        SELECT
             g.GameID,
             g.GameTitle,
             g.YearReleased,
             g.AverageRating,
-            d.StudioName,
-            dbo.fn_GetTopGenreForGame(g.GameID)      AS PrimaryGenre,
-            dbo.fn_GetGameCompletionRate(g.GameID)   AS CommunityCompletionPct,
-            'Matches your preferences'               AS RecommendationReason
+            g.DeveloperID,
+            CAST(CASE WHEN EXISTS (
+                SELECT 1
+                FROM GameGenre gg
+                    JOIN Genre ge    ON gg.GenreID = ge.GenreID
+                    JOIN @PrefList p ON p.GenreName = ge.GenreName
+                WHERE gg.GameID = g.GameID
+            ) THEN 1 ELSE 0 END AS BIT) AS MatchesPrefs
         FROM Game g
-            JOIN Developer d ON g.DeveloperID = d.DeveloperID
-            JOIN @Matched m  ON g.GameID      = m.GameID
-        ORDER BY g.AverageRating DESC;
-
-        RETURN;
-    END
-
-    -- Fallback: no genre match (or no preferences set) — return the
-    -- top-rated unowned games so the caller always gets results.
+        WHERE NOT EXISTS (
+            SELECT 1 FROM Library l
+            WHERE l.GamerID = @GamerID AND l.GameID = g.GameID
+        )
+    )
     SELECT TOP (@TopN)
-        g.GameID,
-        g.GameTitle,
-        g.YearReleased,
-        g.AverageRating,
+        c.GameID,
+        c.GameTitle,
+        c.YearReleased,
+        c.AverageRating,
         d.StudioName,
-        dbo.fn_GetTopGenreForGame(g.GameID)      AS PrimaryGenre,
-        dbo.fn_GetGameCompletionRate(g.GameID)   AS CommunityCompletionPct,
-        'Top-rated pick we think you''ll enjoy'  AS RecommendationReason
-    FROM Game g
-        JOIN Developer d ON g.DeveloperID = d.DeveloperID
-    WHERE dbo.fn_GamerOwnsGame(@GamerID, g.GameID) = 0
-    ORDER BY g.AverageRating DESC;
-
+        ISNULL(pg.PrimaryGenre, N'Unknown') AS PrimaryGenre,
+        cr.CommunityCompletionPct,
+        CASE WHEN c.MatchesPrefs = 1
+             THEN 'Matches your preferences'
+             ELSE 'Top-rated pick we think you''ll enjoy'
+        END AS RecommendationReason
+    FROM Candidate c
+        JOIN Developer d ON c.DeveloperID = d.DeveloperID
+        OUTER APPLY (
+            SELECT TOP 1 ge.GenreName AS PrimaryGenre
+            FROM GameGenre gg
+                JOIN Genre ge ON gg.GenreID = ge.GenreID
+            WHERE gg.GameID = c.GameID
+            ORDER BY ge.GenreName
+        ) pg
+        CROSS APPLY (
+            SELECT CAST(
+                ISNULL(
+                    100.0 *
+                    SUM(CASE WHEN ps.Status = N'Completed' THEN 1 ELSE 0 END) * 1.0
+                    / NULLIF(COUNT(*), 0),
+                0.0)
+            AS DECIMAL(5,2)) AS CommunityCompletionPct
+            FROM Library l
+                LEFT JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
+            WHERE l.GameID = c.GameID
+        ) cr
+    ORDER BY
+        c.MatchesPrefs DESC,    -- preference matches win
+        c.AverageRating DESC,   -- then by rating
+        c.GameID;               -- deterministic tie-breaker
 END;
 GO
 -- USAGE: EXEC sp_GetRecommendations @GamerID=1;
@@ -993,6 +1017,15 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    -- Build the LIKE pattern once instead of concatenating in each branch.
+    DECLARE @kw NVARCHAR(202) = N'%' + @Keyword + N'%';
+
+    -- Single set-based query:
+    --   * Genre match uses EXISTS instead of JOIN+GROUP BY (no fan-out, no dedupe needed).
+    --   * Ownership flag uses EXISTS instead of fn_GamerOwnsGame UDF.
+    --   * APPLY clauses inline fn_GetTopGenreForGame and fn_GetGameCompletionRate
+    --     into the query plan so each runs once per output row.
+    --   * GameID is the deterministic tie-breaker.
     SELECT TOP (@TopN)
         g.GameID,
         g.GameTitle,
@@ -1000,26 +1033,47 @@ BEGIN
         g.YearReleased,
         g.AverageRating,
         d.StudioName,
-        dbo.fn_GetTopGenreForGame(g.GameID)      AS PrimaryGenre,
-        dbo.fn_GetGameCompletionRate(g.GameID)   AS CompletionRatePct,
-        -- Use Layer 1 function to flag whether gamer already owns it
+        ISNULL(pg.PrimaryGenre, N'Unknown') AS PrimaryGenre,
+        cr.CompletionRatePct,
         CASE WHEN @GamerID IS NOT NULL
-                  AND dbo.fn_GamerOwnsGame(@GamerID, g.GameID) = 1
+                  AND EXISTS (
+                      SELECT 1 FROM Library l
+                      WHERE l.GamerID = @GamerID AND l.GameID = g.GameID
+                  )
              THEN 'Yes' ELSE 'No'
         END AS AlreadyOwned
     FROM Game g
-        JOIN Developer d  ON g.DeveloperID = d.DeveloperID
-        JOIN GameGenre gg ON g.GameID      = gg.GameID
-        JOIN Genre ge     ON gg.GenreID    = ge.GenreID
+        JOIN Developer d ON g.DeveloperID = d.DeveloperID
+        OUTER APPLY (
+            SELECT TOP 1 ge.GenreName AS PrimaryGenre
+            FROM GameGenre gg
+                JOIN Genre ge ON gg.GenreID = ge.GenreID
+            WHERE gg.GameID = g.GameID
+            ORDER BY ge.GenreName
+        ) pg
+        CROSS APPLY (
+            SELECT CAST(
+                ISNULL(
+                    100.0 *
+                    SUM(CASE WHEN ps.Status = N'Completed' THEN 1 ELSE 0 END) * 1.0
+                    / NULLIF(COUNT(*), 0),
+                0.0)
+            AS DECIMAL(5,2)) AS CompletionRatePct
+            FROM Library l
+                LEFT JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
+            WHERE l.GameID = g.GameID
+        ) cr
     WHERE
-        g.GameTitle          LIKE '%' + @Keyword + '%'
-        OR g.GameDescription LIKE '%' + @Keyword + '%'
-        OR d.StudioName      LIKE '%' + @Keyword + '%'
-        OR ge.GenreName      LIKE '%' + @Keyword + '%'
-    GROUP BY
-        g.GameID, g.GameTitle, g.GameDescription,
-        g.YearReleased, g.AverageRating, d.StudioName
-    ORDER BY g.AverageRating DESC;
+        g.GameTitle          LIKE @kw
+        OR g.GameDescription LIKE @kw
+        OR d.StudioName      LIKE @kw
+        OR EXISTS (
+            SELECT 1 FROM GameGenre gg
+                JOIN Genre ge ON gg.GenreID = ge.GenreID
+            WHERE gg.GameID = g.GameID
+              AND ge.GenreName LIKE @kw
+        )
+    ORDER BY g.AverageRating DESC, g.GameID;
 END;
 GO
 -- USAGE: EXEC sp_SearchGamesByKeyword @Keyword='open world', @GamerID=1;
@@ -1057,25 +1111,50 @@ BEGIN
     END
 
     -- ── RESULT SET 1: Performance Summary ───────────────────
+    -- Aggregate ownership and reviews in separate CTEs so the cartesian
+    -- product between Library/PlayerStats and GamerReview can't inflate
+    -- the status counts. Also inlines fn_GetGameAverageRating /
+    -- fn_GetGameCompletionRate so we don't pay for two extra UDF calls.
+    ;WITH Ownership AS (
+        SELECT
+            COUNT(DISTINCT l.GamerID) AS TotalOwners,
+            SUM(CASE WHEN ps.Status = N'Completed'   THEN 1 ELSE 0 END) AS TotalFinished,
+            SUM(CASE WHEN ps.Status = N'In Progress' THEN 1 ELSE 0 END) AS CurrentlyPlaying,
+            SUM(CASE WHEN ps.Status = N'Not Started' THEN 1 ELSE 0 END) AS NotStarted,
+            AVG(ps.HoursPlayed) AS AvgHoursPlayed,
+            CAST(
+                ISNULL(
+                    100.0
+                    * COUNT(DISTINCT CASE WHEN ps.Status = N'Completed' THEN l.GamerID END)
+                    / NULLIF(COUNT(DISTINCT l.GamerID), 0),
+                0.0)
+            AS DECIMAL(5,2)) AS CompletionRatePct
+        FROM Library l
+            LEFT JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
+        WHERE l.GameID = @GameID
+    ),
+    Reviews AS (
+        SELECT
+            AVG(Rating) AS LiveAverageRating,
+            COUNT(*)    AS TotalReviews
+        FROM GamerReview
+        WHERE GameID = @GameID
+    )
     SELECT
         g.GameTitle,
         g.YearReleased,
-        -- Layer 1 function for live rating
-        dbo.fn_GetGameAverageRating(@GameID)        AS LiveAverageRating,
-        -- Layer 1 function for completion rate
-        dbo.fn_GetGameCompletionRate(@GameID)        AS CompletionRatePct,
-        COUNT(DISTINCT l.GamerID)                    AS TotalOwners,
-        SUM(CASE WHEN ps.Status = N'Completed'    THEN 1 ELSE 0 END) AS TotalFinished,
-        SUM(CASE WHEN ps.Status = N'In Progress' THEN 1 ELSE 0 END) AS CurrentlyPlaying,
-        SUM(CASE WHEN ps.Status = N'Not Started' THEN 1 ELSE 0 END) AS NotStarted,
-        AVG(ps.HoursPlayed)                          AS AvgHoursPlayed,
-        COUNT(DISTINCT gr.GamerReviewID)             AS TotalReviews
+        r.LiveAverageRating,
+        o.CompletionRatePct,
+        o.TotalOwners,
+        o.TotalFinished,
+        o.CurrentlyPlaying,
+        o.NotStarted,
+        o.AvgHoursPlayed,
+        r.TotalReviews
     FROM Game g
-        LEFT JOIN Library l      ON g.GameID    = l.GameID
-        LEFT JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
-        LEFT JOIN GamerReview gr ON g.GameID    = gr.GameID
-    WHERE g.GameID = @GameID
-    GROUP BY g.GameTitle, g.YearReleased;
+        CROSS JOIN Ownership o
+        CROSS JOIN Reviews r
+    WHERE g.GameID = @GameID;
 
     -- ── RESULT SET 2: Review Sentiment ──────────────────────
     -- CTE assigns the sentiment bucket once so the GROUP BY
@@ -1100,18 +1179,27 @@ BEGIN
     ORDER BY AvgRating DESC;
 
     -- ── RESULT SET 3: Player Profile ────────────────────────
+    -- Pre-compute each gamer's completed count once in a derived table.
+    -- Before: fn_GetGamerCompletedCount was called per row inside AVG,
+    --   firing one extra query per gamer in the result. Now we get the
+    --   counts in a single join.
     SELECT
         ga.PreferredMode,
         ga.PreferredDifficulty,
         ga.PreferredPlayStyle,
-        COUNT(*)                AS PlayerCount,
-        AVG(ps.HoursPlayed)     AS AvgHoursPlayed,
-        -- Layer 1 function per player to show their finished game count
-        -- (segments casual vs dedicated players)
-        AVG(CAST(dbo.fn_GetGamerCompletedCount(ga.GamerID) AS DECIMAL)) AS AvgGamesFinishedByThisPlayerType
+        COUNT(*)                                        AS PlayerCount,
+        AVG(ps.HoursPlayed)                             AS AvgHoursPlayed,
+        AVG(CAST(gc.CompletedCount AS DECIMAL(10,2)))   AS AvgGamesFinishedByThisPlayerType
     FROM Library l
         JOIN PlayerStats ps ON l.LibraryID = ps.LibraryID
         JOIN Gamer ga       ON l.GamerID   = ga.GamerID
+        OUTER APPLY (
+            SELECT COUNT(*) AS CompletedCount
+            FROM Library l2
+                JOIN PlayerStats ps2 ON l2.LibraryID = ps2.LibraryID
+            WHERE l2.GamerID = ga.GamerID
+              AND ps2.Status = N'Completed'
+        ) gc
     WHERE l.GameID = @GameID
     GROUP BY ga.PreferredMode, ga.PreferredDifficulty, ga.PreferredPlayStyle
     ORDER BY PlayerCount DESC;
@@ -1155,46 +1243,55 @@ BEGIN
 
     EXEC sp_AssertGamerExists @GamerID;
 
-    -- Layer 1 function to count finished games for the suggestion message
-    DECLARE @CompletedCount INT = dbo.fn_GetGamerCompletedCount(@GamerID);
+    -- Snapshot the gamer's library + stats once into a table variable
+    -- so the priority checks and the final SELECT don't re-execute the
+    -- TVF (which JOINs Library/Game/PlayerStats + calls fn_GetTopGenreForGame).
+    DECLARE @Lib TABLE (
+        GameID         INT,
+        GameTitle      NVARCHAR(200),
+        AverageRating  DECIMAL(4,2),
+        PrimaryGenre   NVARCHAR(100),
+        HoursPlayed    DECIMAL(8,2),
+        Status         NVARCHAR(30)
+    );
+    INSERT INTO @Lib (GameID, GameTitle, AverageRating, PrimaryGenre, HoursPlayed, Status)
+    SELECT GameID, GameTitle, AverageRating, PrimaryGenre, HoursPlayed, Status
+    FROM dbo.fn_GetGamerLibrary(@GamerID);
 
-    -- PRIORITY 1: Use Layer 1 table-valued function to check for unstarted games
-    IF EXISTS (
-        SELECT 1 FROM dbo.fn_GetGamerLibrary(@GamerID) WHERE Status = N'Not Started'
-    )
+    -- Count completed games from the snapshot (no extra DB round-trip).
+    DECLARE @CompletedCount INT =
+        (SELECT COUNT(*) FROM @Lib WHERE Status = N'Completed');
+
+    -- PRIORITY 1: an unstarted game from the library
+    IF EXISTS (SELECT 1 FROM @Lib WHERE Status = N'Not Started')
     BEGIN
         SELECT TOP 1
             GameID, GameTitle, AverageRating, PrimaryGenre,
             Status, HoursPlayed,
             'You own this but have not started it yet'  AS SuggestionReason,
             @CompletedCount                             AS GamesYouHaveFinished
-        FROM dbo.fn_GetGamerLibrary(@GamerID)       -- Layer 1 table-valued function
+        FROM @Lib
         WHERE Status = N'Not Started'
-        ORDER BY AverageRating DESC;
+        ORDER BY AverageRating DESC, GameID;
         RETURN;
     END
 
-    -- PRIORITY 2: Resume an in-progress game (also using Layer 1 TVF)
-    IF EXISTS (
-        SELECT 1 FROM dbo.fn_GetGamerLibrary(@GamerID) WHERE Status = N'In Progress'
-    )
+    -- PRIORITY 2: resume an in-progress game
+    IF EXISTS (SELECT 1 FROM @Lib WHERE Status = N'In Progress')
     BEGIN
         SELECT TOP 1
             GameID, GameTitle, AverageRating, PrimaryGenre,
             Status, HoursPlayed,
             'Resume this — you have ' + CAST(HoursPlayed AS NVARCHAR) + ' hours in it' AS SuggestionReason,
             @CompletedCount AS GamesYouHaveFinished
-        FROM dbo.fn_GetGamerLibrary(@GamerID)       -- Layer 1 table-valued function
+        FROM @Lib
         WHERE Status = N'In Progress'
-        ORDER BY HoursPlayed DESC;
+        ORDER BY HoursPlayed DESC, GameID;
         RETURN;
     END
 
-    -- PRIORITY 3: All games done — call Layer 3 procedure for new recommendations
-    -- This is what makes sp_GetNextGameSuggestion a Layer 4 procedure
-    PRINT 'You have finished all your games! Here are some new recommendations:';
-    EXEC sp_GetRecommendations @GamerID = @GamerID, @TopN = 3;  -- calling Layer 3
-
+    -- PRIORITY 3: library exhausted — pull fresh catalog recommendations.
+    EXEC sp_GetRecommendations @GamerID = @GamerID, @TopN = 3;
 END;
 GO
 -- USAGE: EXEC sp_GetNextGameSuggestion @GamerID=2;
