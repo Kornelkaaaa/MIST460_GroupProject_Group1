@@ -34,8 +34,12 @@ GO
 IF OBJECT_ID('procValidateUser')            IS NOT NULL DROP PROCEDURE procValidateUser;
 IF OBJECT_ID('sp_RegisterGamer')            IS NOT NULL DROP PROCEDURE sp_RegisterGamer;
 IF OBJECT_ID('sp_AddGameToLibrary')         IS NOT NULL DROP PROCEDURE sp_AddGameToLibrary;
+IF OBJECT_ID('sp_RemoveGameFromLibrary')    IS NOT NULL DROP PROCEDURE sp_RemoveGameFromLibrary;
 IF OBJECT_ID('sp_UpdateGameStatus')         IS NOT NULL DROP PROCEDURE sp_UpdateGameStatus;
 IF OBJECT_ID('sp_SubmitReview')             IS NOT NULL DROP PROCEDURE sp_SubmitReview;
+IF OBJECT_ID('sp_UpdateReview')             IS NOT NULL DROP PROCEDURE sp_UpdateReview;
+IF OBJECT_ID('sp_DeleteReview')             IS NOT NULL DROP PROCEDURE sp_DeleteReview;
+IF OBJECT_ID('sp_UpdateGamerProfile')       IS NOT NULL DROP PROCEDURE sp_UpdateGamerProfile;
 IF OBJECT_ID('sp_GetRecommendations')       IS NOT NULL DROP PROCEDURE sp_GetRecommendations;
 IF OBJECT_ID('sp_SearchGamesByKeyword')     IS NOT NULL DROP PROCEDURE sp_SearchGamesByKeyword;
 -- Guard procedures (called by other Layer 3 procs)
@@ -45,7 +49,7 @@ GO
 
 -- Layer 2: Triggers (call Layer 1 functions)
 IF OBJECT_ID('trg_GamerReview_RecalcRating')        IS NOT NULL DROP TRIGGER trg_GamerReview_RecalcRating;
-IF OBJECT_ID('trg_PreventDuplicateLibraryEntry')    IS NOT NULL DROP TRIGGER trg_PreventDuplicateLibraryEntry;
+IF OBJECT_ID('trg_PreventDuplicateLibraryEntry')    IS NOT NULL DROP TRIGGER trg_PreventDuplicateLibraryEntry;  -- removed; UK_Library_GamerGame enforces this at the DB level
 IF OBJECT_ID('trg_AutoInitPlayerStats')             IS NOT NULL DROP TRIGGER trg_AutoInitPlayerStats;
 IF OBJECT_ID('trg_BlockFinishedGameStatusChange')   IS NOT NULL DROP TRIGGER trg_BlockFinishedGameStatusChange;
 GO
@@ -450,40 +454,13 @@ END;
 GO
 
 
--- ------------------------------------------------------------
--- trg_PreventDuplicateLibraryEntry
--- ------------------------------------------------------------
--- CALLS: fn_GamerOwnsGame (Layer 1)
---
--- PURPOSE: Intercepts INSERT on Library and uses the shared
---   fn_GamerOwnsGame check — the same check used by
---   sp_AddGameToLibrary — ensuring consistent duplicate
---   detection at both the procedure and trigger level.
--- ------------------------------------------------------------
-CREATE TRIGGER trg_PreventDuplicateLibraryEntry
-ON Library
-INSTEAD OF INSERT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Detect duplicates via a set-based EXISTS join rather than the
-    -- per-row fn_GamerOwnsGame UDF (which makes the optimizer evaluate
-    -- the check row-by-row).
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-            JOIN Library l ON l.GamerID = i.GamerID AND l.GameID = i.GameID
-    )
-    BEGIN
-        RAISERROR('This game already exists in the gamer''s library.', 16, 1);
-        RETURN;
-    END
-
-    INSERT INTO Library (GamerID, GameID, DateAdded)
-    SELECT GamerID, GameID, DateAdded FROM inserted;
-END;
-GO
+-- trg_PreventDuplicateLibraryEntry was removed.
+--   Reason: as an INSTEAD OF trigger it broke SCOPE_IDENTITY() in
+--   sp_AddGameToLibrary (the outer scope never sees the inserted
+--   row's identity, so @NewLibraryID was NULL).
+--   Replacement: the UK_Library_GamerGame UNIQUE constraint already
+--   prevents duplicates at the table level, and sp_AddGameToLibrary's
+--   own ownership check still produces the friendly error message.
 
 
 -- ------------------------------------------------------------
@@ -751,9 +728,10 @@ BEGIN
 
         SET @NewLibraryID = SCOPE_IDENTITY();
 
-        -- trg_AutoInitPlayerStats will also handle this as a safety net
-        INSERT INTO PlayerStats (LibraryID, HoursPlayed, Status)
-        VALUES (@NewLibraryID, 0.0, N'Not Started');
+        -- trg_AutoInitPlayerStats (AFTER INSERT on Library) has already
+        -- created the PlayerStats row at this point. We deliberately
+        -- don't insert it again here — the UK_PlayerStats_Library UNIQUE
+        -- constraint would reject the duplicate.
 
         COMMIT TRANSACTION;
 
@@ -1207,6 +1185,157 @@ BEGIN
 END;
 GO
 -- USAGE: EXEC sp_GetDeveloperAnalytics @GameTitle='Echoes of Aether', @DeveloperID=6;
+
+
+-- ------------------------------------------------------------
+-- sp_RemoveGameFromLibrary
+-- ------------------------------------------------------------
+-- PURPOSE: Removes a game from a gamer's library. Reviews are NOT
+--   touched — a gamer's past review survives selling/uninstalling
+--   the game. PlayerStats cascades automatically via the FK.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_RemoveGameFromLibrary
+    @GamerID    INT,
+    @GameTitle  NVARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    EXEC sp_AssertGamerExists @GamerID;
+
+    DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
+
+    IF NOT EXISTS (SELECT 1 FROM Library WHERE GamerID = @GamerID AND GameID = @GameID)
+    BEGIN
+        RAISERROR('This game is not in the gamer''s library.', 16, 1);
+        RETURN;
+    END
+
+    DELETE FROM Library WHERE GamerID = @GamerID AND GameID = @GameID;
+
+    SELECT @@ROWCOUNT AS RowsDeleted;
+END;
+GO
+-- USAGE: EXEC sp_RemoveGameFromLibrary @GamerID=1, @GameTitle='Diablo IV';
+
+
+-- ------------------------------------------------------------
+-- sp_UpdateReview
+-- ------------------------------------------------------------
+-- PURPOSE: Updates an existing review's rating and/or text.
+--   AverageRating is recalculated by trg_GamerReview_RecalcRating.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_UpdateReview
+    @GamerID    INT,
+    @GameTitle  NVARCHAR(200),
+    @Rating     DECIMAL(3,1),
+    @ReviewText NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
+
+    IF NOT EXISTS (SELECT 1 FROM GamerReview WHERE GamerID = @GamerID AND GameID = @GameID)
+    BEGIN
+        RAISERROR('No existing review found for this game. Use sp_SubmitReview to create one.', 16, 1);
+        RETURN;
+    END
+
+    UPDATE GamerReview
+    SET Rating     = @Rating,
+        ReviewText = @ReviewText,
+        ReviewDate = GETDATE()
+    WHERE GamerID = @GamerID AND GameID = @GameID;
+
+    SELECT g.GameTitle, g.AverageRating AS UpdatedAvgRating
+    FROM Game g WHERE g.GameID = @GameID;
+END;
+GO
+-- USAGE: EXEC sp_UpdateReview @GamerID=1, @GameTitle='Diablo IV', @Rating=4.8, @ReviewText='Even better after the patches!';
+
+
+-- ------------------------------------------------------------
+-- sp_DeleteReview
+-- ------------------------------------------------------------
+-- PURPOSE: Removes a gamer's review for a specific game.
+--   AverageRating is recalculated by trg_GamerReview_RecalcRating.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_DeleteReview
+    @GamerID    INT,
+    @GameTitle  NVARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @GameID INT;
+    EXEC sp_ResolveGameID @GameTitle = @GameTitle, @GameID = @GameID OUTPUT;
+
+    DELETE FROM GamerReview WHERE GamerID = @GamerID AND GameID = @GameID;
+
+    SELECT @@ROWCOUNT AS RowsDeleted;
+END;
+GO
+-- USAGE: EXEC sp_DeleteReview @GamerID=1, @GameTitle='Diablo IV';
+
+
+-- ------------------------------------------------------------
+-- sp_UpdateGamerProfile
+-- ------------------------------------------------------------
+-- PURPOSE: Edits a gamer's profile. Any parameter left NULL keeps
+--   its existing value (COALESCE pattern) so callers can update
+--   one field at a time without sending the entire profile.
+-- ------------------------------------------------------------
+CREATE PROCEDURE sp_UpdateGamerProfile
+    @GamerID                INT,
+    @FirstName              NVARCHAR(50)    = NULL,
+    @LastName               NVARCHAR(50)    = NULL,
+    @Phone                  NVARCHAR(20)    = NULL,
+    @PreferredGenres        NVARCHAR(200)   = NULL,
+    @PreferredDifficulty    NVARCHAR(50)    = NULL,
+    @PreferredPlayStyle     NVARCHAR(100)   = NULL,
+    @PreferredMode          NVARCHAR(50)    = NULL,
+    @AvailablePlayTime      DECIMAL(5,2)    = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    EXEC sp_AssertGamerExists @GamerID;
+
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        UPDATE AppUser
+        SET FirstName = COALESCE(@FirstName, FirstName),
+            LastName  = COALESCE(@LastName,  LastName),
+            Phone     = COALESCE(@Phone,     Phone)
+        WHERE AppUserID = @GamerID;
+
+        UPDATE Gamer
+        SET PreferredGenres     = COALESCE(@PreferredGenres,     PreferredGenres),
+            PreferredDifficulty = COALESCE(@PreferredDifficulty, PreferredDifficulty),
+            PreferredPlayStyle  = COALESCE(@PreferredPlayStyle,  PreferredPlayStyle),
+            PreferredMode       = COALESCE(@PreferredMode,       PreferredMode),
+            AvailablePlayTime   = COALESCE(@AvailablePlayTime,   AvailablePlayTime)
+        WHERE GamerID = @GamerID;
+
+        COMMIT TRANSACTION;
+
+        SELECT u.AppUserID, u.FirstName, u.LastName, u.Phone,
+               g.PreferredGenres, g.PreferredDifficulty,
+               g.PreferredPlayStyle, g.PreferredMode, g.AvailablePlayTime
+        FROM AppUser u
+            JOIN Gamer g ON g.GamerID = u.AppUserID
+        WHERE u.AppUserID = @GamerID;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+-- USAGE: EXEC sp_UpdateGamerProfile @GamerID=1, @PreferredDifficulty=N'Expert';
 
 
 -- ============================================================

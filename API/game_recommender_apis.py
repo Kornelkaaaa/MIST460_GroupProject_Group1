@@ -15,6 +15,11 @@ from full_gamer_onboarding import full_gamer_onboarding
 from get_gamer_library import get_gamer_library
 from get_all_games import get_all_games
 from get_developer_games import get_developer_games
+from remove_game_from_library import remove_game_from_library
+from update_review import update_review
+from delete_review import delete_review
+from update_gamer_profile import update_gamer_profile
+from get_gamer_profile import get_gamer_profile
 
 
 app = FastAPI()
@@ -62,6 +67,56 @@ def get_all_games_endpoint():
 @app.get("/get_developer_games/")
 def get_developer_games_endpoint(developer_id: int):
     return get_developer_games(developer_id)
+
+
+@app.get("/remove_game_from_library/")
+def remove_game_from_library_endpoint(gamer_id: int, game_title: str):
+    return remove_game_from_library(gamer_id, game_title)
+
+
+@app.get("/update_review/")
+def update_review_endpoint(
+    gamer_id: int,
+    game_title: str,
+    rating: float,
+    review_text: Optional[str] = None,
+):
+    return update_review(gamer_id, game_title, rating, review_text)
+
+
+@app.get("/delete_review/")
+def delete_review_endpoint(gamer_id: int, game_title: str):
+    return delete_review(gamer_id, game_title)
+
+
+@app.get("/get_gamer_profile/")
+def get_gamer_profile_endpoint(gamer_id: int):
+    return get_gamer_profile(gamer_id)
+
+
+@app.get("/update_gamer_profile/")
+def update_gamer_profile_endpoint(
+    gamer_id: int,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    phone: Optional[str] = None,
+    preferred_genres: Optional[str] = None,
+    preferred_difficulty: Optional[str] = None,
+    preferred_play_style: Optional[str] = None,
+    preferred_mode: Optional[str] = None,
+    available_play_time: Optional[float] = None,
+):
+    return update_gamer_profile(
+        gamer_id,
+        first_name,
+        last_name,
+        phone,
+        preferred_genres,
+        preferred_difficulty,
+        preferred_play_style,
+        preferred_mode,
+        available_play_time,
+    )
 
 
 @app.get("/register_gamer/")

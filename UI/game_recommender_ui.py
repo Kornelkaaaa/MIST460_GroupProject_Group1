@@ -10,6 +10,9 @@ from update_game_status_ui import update_game_status_ui
 from submit_review_ui import submit_review_ui
 from get_developer_analytics_ui import get_developer_analytics_ui
 from get_gamer_library_ui import get_gamer_library_ui
+from remove_game_from_library_ui import remove_game_from_library_ui
+from manage_reviews_ui import manage_reviews_ui
+from update_gamer_profile_ui import update_gamer_profile_ui
 
 
 st.set_page_config(page_title="Game Recommender", layout="wide")
@@ -50,8 +53,11 @@ GAMER_PAGES = {
     "Search Games by Keyword": search_games_ui,
     "What Should I Play Next?": get_next_game_suggestion_ui,
     "Add Game to Library": add_game_to_library_ui,
+    "Remove Game from Library": remove_game_from_library_ui,
     "Update Game Status": update_game_status_ui,
     "Submit a Review": submit_review_ui,
+    "Edit / Delete Review": manage_reviews_ui,
+    "Edit My Profile": update_gamer_profile_ui,
 }
 
 DEVELOPER_PAGES = {
